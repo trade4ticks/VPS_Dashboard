@@ -66,15 +66,13 @@ def format_bytes(size: int) -> str:
 
 @app.get("/")
 def overview(request: Request):
-    return templates.TemplateResponse("overview.html", {
-        "request": request, "active": "overview",
-    })
+    return templates.TemplateResponse(request, "overview.html", {"active": "overview"})
 
 
 @app.get("/services")
 def services(request: Request):
-    return templates.TemplateResponse("services.html", {
-        "request": request, "active": "services",
+    return templates.TemplateResponse(request, "services.html", {
+        "active": "services",
         "services": config.SERVICES,
         "projects": config.PROJECTS,
     })
@@ -82,32 +80,28 @@ def services(request: Request):
 
 @app.get("/files")
 def files(request: Request):
-    return templates.TemplateResponse("files.html", {
-        "request": request, "active": "files",
+    return templates.TemplateResponse(request, "files.html", {
+        "active": "files",
         "projects": config.PROJECTS,
     })
 
 
 @app.get("/logs")
 def logs(request: Request):
-    return templates.TemplateResponse("logs.html", {
-        "request": request, "active": "logs",
+    return templates.TemplateResponse(request, "logs.html", {
+        "active": "logs",
         "log_files": config.LOG_FILES,
     })
 
 
 @app.get("/disk")
 def disk(request: Request):
-    return templates.TemplateResponse("disk.html", {
-        "request": request, "active": "disk",
-    })
+    return templates.TemplateResponse(request, "disk.html", {"active": "disk"})
 
 
 @app.get("/cheatsheet")
 def cheatsheet(request: Request):
-    return templates.TemplateResponse("cheatsheet.html", {
-        "request": request, "active": "cheatsheet",
-    })
+    return templates.TemplateResponse(request, "cheatsheet.html", {"active": "cheatsheet"})
 
 
 # ---------------------------------------------------------------------------
