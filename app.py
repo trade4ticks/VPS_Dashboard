@@ -200,6 +200,9 @@ def api_browse(path: str = "/"):
         for entry in entries:
             if entry.name in SKIP_NAMES:
                 continue
+            # Hide virtual kernel filesystems from the listing entirely
+            if entry.path in SKIP_ROOTS:
+                continue
             # Hide dot-files except at top-level roots like /root
             if entry.name.startswith(".") and real not in ("/", "/root"):
                 continue
@@ -237,9 +240,15 @@ def api_du(paths: list[str] = Query(default=[])):
     """Return disk usage for a list of paths. Called after a directory expands."""
     if not paths:
         return {}
-    # Single du call across all paths — much faster than one call per path
+    # Strip out virtual filesystems — du produces nonsense sizes for /proc etc.
+    safe_paths = [p for p in paths if not any(
+        os.path.realpath(p) == s or os.path.realpath(p).startswith(s + "/")
+        for s in SKIP_ROOTS
+    )]
+    if not safe_paths:
+        return {}
     result = subprocess.run(
-        ["du", "-sb", "--"] + paths,
+        ["du", "-sb", "--"] + safe_paths,
         capture_output=True, text=True, timeout=60,
     )
     sizes = {}
