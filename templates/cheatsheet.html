@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="page-title">Cheat Sheet</h1>
+<p class="text-muted mb-4" style="font-size:0.83rem">Click any command to copy it to your clipboard.</p>
+
+<div class="row">
+
+<!-- ── Column 1 ───────────────────────────────────────────── -->
+<div class="col-lg-6">
+
+    <div class="cheat-section">
+        <div class="cheat-section-title">Service Management</div>
+        <div class="cheat-card">
+            {% set svc_cmds = [
+                ("systemctl status thetadata.service",     "Check ThetaData Terminal status"),
+                ("systemctl restart thetadata.service",    "Restart ThetaData Terminal"),
+                ("systemctl stop thetadata.service",       "Stop ThetaData Terminal"),
+                ("systemctl start thetadata.service",      "Start ThetaData Terminal"),
+                ("systemctl status portfolio-dashboard",   "Check Portfolio Dashboard status"),
+                ("systemctl restart portfolio-dashboard",  "Restart Portfolio Dashboard"),
+                ("journalctl -u portfolio-dashboard -n 50","Last 50 log lines for Portfolio Dashboard"),
+                ("journalctl -u thetadata.service -n 50",  "Last 50 log lines for ThetaData Terminal"),
+            ] %}
+            {% for cmd, desc in svc_cmds %}
+            <div class="cheat-item">
+                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                    <span>{{ cmd }}</span>
+                    <span class="cheat-copy-hint">click to copy</span>
+                </div>
+                <div class="cheat-desc">{{ desc }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="cheat-section">
+        <div class="cheat-section-title">Git Operations</div>
+        <div class="cheat-card">
+            {% set git_cmds = [
+                ("cd /root/Portfolio_Dashboard && git pull",                   "Pull latest code for Portfolio Dashboard"),
+                ("cd /root/Thetadata_Raw_SPX && git pull",                     "Pull latest code for Thetadata Raw SPX"),
+                ("git status",                                                 "Show changed files in current directory"),
+                ("git log --oneline -10",                                      "Last 10 commits"),
+                ("git diff",                                                   "Show uncommitted changes"),
+                ("git stash",                                                  "Stash local changes temporarily"),
+                ("git stash pop",                                              "Re-apply stashed changes"),
+            ] %}
+            {% for cmd, desc in git_cmds %}
+            <div class="cheat-item">
+                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                    <span>{{ cmd }}</span>
+                    <span class="cheat-copy-hint">click to copy</span>
+                </div>
+                <div class="cheat-desc">{{ desc }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="cheat-section">
+        <div class="cheat-section-title">Cron Jobs</div>
+        <div class="cheat-card">
+            {% set cron_cmds = [
+                ("crontab -l",                                                   "List all cron jobs"),
+                ("crontab -e",                                                   "Edit cron jobs (opens in editor)"),
+                ("tail -f /root/Portfolio_Dashboard/logs/fetch_trades.log",      "Watch fetch_trades log live"),
+                ("tail -n 100 /root/Portfolio_Dashboard/logs/fetch_trades.log",  "Last 100 lines of fetch_trades log"),
+            ] %}
+            {% for cmd, desc in cron_cmds %}
+            <div class="cheat-item">
+                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                    <span>{{ cmd }}</span>
+                    <span class="cheat-copy-hint">click to copy</span>
+                </div>
+                <div class="cheat-desc">{{ desc }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+</div><!-- /col-1 -->
+
+<!-- ── Column 2 ───────────────────────────────────────────── -->
+<div class="col-lg-6">
+
+    <div class="cheat-section">
+        <div class="cheat-section-title">Docker</div>
+        <div class="cheat-card">
+            {% set docker_cmds = [
+                ("cd /root/Portfolio_Dashboard && docker compose ps",          "Show running containers"),
+                ("cd /root/Portfolio_Dashboard && docker compose up -d",       "Start PostgreSQL container"),
+                ("cd /root/Portfolio_Dashboard && docker compose down",        "Stop PostgreSQL container"),
+                ("cd /root/Portfolio_Dashboard && docker compose logs db",     "PostgreSQL container logs"),
+                ("docker ps",                                                  "List all running containers"),
+                ("docker ps -a",                                               "List all containers (including stopped)"),
+            ] %}
+            {% for cmd, desc in docker_cmds %}
+            <div class="cheat-item">
+                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                    <span>{{ cmd }}</span>
+                    <span class="cheat-copy-hint">click to copy</span>
+                </div>
+                <div class="cheat-desc">{{ desc }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="cheat-section">
+        <div class="cheat-section-title">System &amp; Disk</div>
+        <div class="cheat-card">
+            {% set sys_cmds = [
+                ("df -h",                                                      "Disk usage for all filesystems"),
+                ("du -sh /root/Thetadata_Raw_SPX/data/spx_options/*",         "Size of each date folder in SPX data"),
+                ("du -sh /root/*",                                             "Size of each project folder"),
+                ("ps aux | grep python",                                       "Find running Python processes"),
+                ("ps aux | grep -E 'python|uvicorn'",                          "Find Python/uvicorn processes"),
+                ("free -h",                                                    "RAM usage"),
+                ("top",                                                        "Live process monitor (q to quit)"),
+                ("ss -tlnp",                                                   "Show all listening ports"),
+            ] %}
+            {% for cmd, desc in sys_cmds %}
+            <div class="cheat-item">
+                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                    <span>{{ cmd }}</span>
+                    <span class="cheat-copy-hint">click to copy</span>
+                </div>
+                <div class="cheat-desc">{{ desc }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="cheat-section">
+        <div class="cheat-section-title">Python / VPS Dashboard</div>
+        <div class="cheat-card">
+            {% set py_cmds = [
+                ("cd /root/VPS_Dashboard && source .venv/bin/activate",        "Activate the VPS Dashboard venv"),
+                ("cd /root/Portfolio_Dashboard && source .venv/bin/activate",  "Activate Portfolio Dashboard venv"),
+                ("/root/Portfolio_Dashboard/.venv/bin/python scripts/fetch_trades.py",  "Run fetch_trades manually"),
+                ("systemctl restart vps-dashboard",                            "Restart this dashboard"),
+                ("journalctl -u vps-dashboard -n 50",                          "Last 50 log lines for this dashboard"),
+            ] %}
+            {% for cmd, desc in py_cmds %}
+            <div class="cheat-item">
+                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                    <span>{{ cmd }}</span>
+                    <span class="cheat-copy-hint">click to copy</span>
+                </div>
+                <div class="cheat-desc">{{ desc }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+</div><!-- /col-2 -->
+</div><!-- /row -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Override copyText to handle the cheat sheet (no element flash needed, just clipboard)
+function copyText(text, el) {
+    navigator.clipboard.writeText(text).then(() => {
+        const hint = el.querySelector('.cheat-copy-hint');
+        el.style.background = 'rgba(34,197,94,0.15)';
+        if (hint) { hint.textContent = 'copied!'; }
+        setTimeout(() => {
+            el.style.background = '';
+            if (hint) hint.textContent = 'click to copy';
+        }, 1000);
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="page-title">Services</h1>
+
+<!-- ── System services ─────────────────────────────────────── -->
+<div class="section-header">System Services</div>
+<div class="card mb-4">
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0" id="svc-table">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:36%">Service</th>
+                    <th style="width:30%">Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, svc in services.items() %}
+                <tr>
+                    <td class="align-middle fw-500">{{ svc.name }}
+                        {% if svc.port %}
+                        <span class="text-muted" style="font-size:0.75rem"> :{{ svc.port }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="align-middle" id="status-{{ key }}">
+                        <span class="text-muted" style="font-size:0.78rem">checking&hellip;</span>
+                    </td>
+                    <td class="align-middle">
+                        {% if svc.service %}
+                        <button class="btn btn-sm btn-outline-warning"
+                                onclick="doAction('/api/restart/{{ key }}', this)">
+                            <i class="bi bi-arrow-clockwise"></i> Restart
+                        </button>
+                        {% else %}
+                        <span class="text-muted" style="font-size:0.78rem">no systemd unit</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ── Projects ────────────────────────────────────────────── -->
+<div class="section-header">Projects</div>
+<div class="card mb-4">
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:36%">Project</th>
+                    <th style="width:30%" class="text-muted" style="font-size:0.78rem">Path</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, proj in projects.items() %}
+                <tr>
+                    <td class="align-middle fw-500">{{ proj.name }}</td>
+                    <td class="align-middle text-muted" style="font-size:0.75rem;font-family:monospace">
+                        {{ proj.path }}
+                    </td>
+                    <td class="align-middle">
+                        <div class="d-flex gap-1 flex-wrap">
+                            <button class="btn btn-sm btn-outline-primary"
+                                    onclick="doAction('/api/git-pull/{{ key }}', this)">
+                                <i class="bi bi-download"></i> Git Pull
+                            </button>
+                            {% if proj.service %}
+                            <button class="btn btn-sm btn-primary"
+                                    onclick="doAction('/api/deploy/{{ key }}', this)">
+                                <i class="bi bi-rocket-takeoff"></i> Pull &amp; Restart
+                            </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ── Output ──────────────────────────────────────────────── -->
+<div id="action-label" class="text-muted mb-1" style="font-size:0.78rem;display:none"></div>
+<div id="output" class="output-box"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Load status badges into the service table
+async function loadServiceStatus() {
+    try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        for (const [key, svc] of Object.entries(data)) {
+            const cell = document.getElementById('status-' + key);
+            if (cell) cell.innerHTML = statusBadge(svc);
+        }
+    } catch (err) {
+        console.warn('Status load failed:', err);
+    }
+}
+
+loadServiceStatus();
+setInterval(loadServiceStatus, 30000);
+
+// Action button handler — shows result in the shared output box
+async function doAction(url, btn) {
+    const out = document.getElementById('output');
+    const label = document.getElementById('action-label');
+    label.textContent = 'Last action: ' + btn.textContent.trim() + ' → ' + url;
+    label.style.display = 'block';
+    await postAction(url, out, btn);
+    // Refresh status after any action
+    setTimeout(loadServiceStatus, 1500);
+}
+</script>
+{% endblock %}

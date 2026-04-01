@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VPS Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="/static/style.css" rel="stylesheet">
+</head>
+<body>
+<div id="layout">
+    <nav id="sidebar">
+        <div class="sidebar-brand">
+            <i class="bi bi-hdd-network"></i> VPS Dashboard
+        </div>
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link {% if active == 'overview' %}active{% endif %}" href="/">
+                    <i class="bi bi-house-door"></i> Overview
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if active == 'services' %}active{% endif %}" href="/services">
+                    <i class="bi bi-gear-wide-connected"></i> Services
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if active == 'files' %}active{% endif %}" href="/files">
+                    <i class="bi bi-folder2-open"></i> Files
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if active == 'logs' %}active{% endif %}" href="/logs">
+                    <i class="bi bi-journal-text"></i> Logs
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if active == 'disk' %}active{% endif %}" href="/disk">
+                    <i class="bi bi-hdd-stack"></i> Disk
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if active == 'cheatsheet' %}active{% endif %}" href="/cheatsheet">
+                    <i class="bi bi-card-checklist"></i> Cheat Sheet
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <main id="content">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/dashboard.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

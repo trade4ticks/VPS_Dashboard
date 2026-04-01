@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="page-title">Logs</h1>
+
+<div class="card">
+    <div class="card-header">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <select id="log-select" class="form-select form-select-sm" style="width:auto">
+                {% for key, info in log_files.items() %}
+                <option value="{{ key }}" data-desc="{{ info.description }}" data-schedule="{{ info.schedule }}">
+                    {{ info.name }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <select id="lines-select" class="form-select form-select-sm" style="width:auto">
+                <option value="50">50 lines</option>
+                <option value="100">100 lines</option>
+                <option value="200" selected>200 lines</option>
+                <option value="500">500 lines</option>
+            </select>
+
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadLog()">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+
+            <div class="form-check form-switch mb-0 ms-1">
+                <input class="form-check-input" type="checkbox" id="auto-refresh" onchange="toggleAutoRefresh()">
+                <label class="form-check-label" for="auto-refresh" style="font-size:0.82rem">Auto-refresh (30s)</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-body">
+        <div id="log-meta" class="log-meta">&nbsp;</div>
+        <div id="log-desc" class="text-muted mb-2" style="font-size:0.78rem">&nbsp;</div>
+        <div class="log-box" id="log-content">Select a log above and click Refresh.</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let autoRefreshTimer = null;
+
+async function loadLog() {
+    const key   = document.getElementById('log-select').value;
+    const lines = document.getElementById('lines-select').value;
+    const box   = document.getElementById('log-content');
+    const meta  = document.getElementById('log-meta');
+    const desc  = document.getElementById('log-desc');
+
+    const opt = document.querySelector('#log-select option:checked');
+    desc.textContent = opt ? opt.dataset.schedule + ' — ' + opt.dataset.desc : '';
+
+    box.textContent = 'Loading…';
+    try {
+        const res  = await fetch(`/api/logs/${key}?lines=${lines}`);
+        const data = await res.json();
+        box.textContent = data.content || '(empty)';
+        box.scrollTop = box.scrollHeight;
+
+        if (data.exists) {
+            meta.textContent = `${data.path}  ·  ${data.size}  ·  last modified ${data.modified}`;
+        } else {
+            meta.textContent = data.path + '  ·  file not found';
+        }
+    } catch (err) {
+        box.textContent = 'Error: ' + err.message;
+    }
+}
+
+function toggleAutoRefresh() {
+    const on = document.getElementById('auto-refresh').checked;
+    if (on) {
+        autoRefreshTimer = setInterval(loadLog, 30000);
+    } else {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+    }
+}
+
+// Auto-load the first log on page open
+loadLog();
+</script>
+{% endblock %}

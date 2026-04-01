@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex align-items-baseline justify-content-between mb-3">
+    <h1 class="page-title mb-0">Overview</h1>
+    <span class="text-muted" id="last-updated" style="font-size:0.78rem">Checking&hellip;</span>
+</div>
+
+<div class="row" id="status-grid">
+    <!-- Populated by JS -->
+    <div class="col-12 text-muted">Loading service status&hellip;</div>
+</div>
+
+<div class="row mt-2">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">Quick Links</div>
+            <div class="card-body d-flex gap-2 flex-wrap">
+                <a href="/services" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-gear"></i> Services &amp; Deploy
+                </a>
+                <a href="/logs" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-journal-text"></i> Logs
+                </a>
+                <a href="/disk" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-hdd-stack"></i> Disk Usage
+                </a>
+                <a href="/files" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-folder2-open"></i> File Browser
+                </a>
+                <a href="/cheatsheet" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-card-checklist"></i> Cheat Sheet
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadStatus() {
+    const grid = document.getElementById('status-grid');
+    try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        let html = '';
+        for (const [key, svc] of Object.entries(data)) {
+            html += `
+            <div class="col-md-4 col-sm-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start justify-content-between mb-2">
+                            <span style="font-weight:600;font-size:0.9rem">${svc.name}</span>
+                        </div>
+                        <div>${statusBadge(svc)}</div>
+                    </div>
+                </div>
+            </div>`;
+        }
+        grid.innerHTML = html;
+        document.getElementById('last-updated').textContent =
+            'Updated ' + new Date().toLocaleTimeString();
+    } catch (err) {
+        grid.innerHTML = `<div class="col-12 text-danger">Failed to load status: ${err.message}</div>`;
+    }
+}
+
+loadStatus();
+setInterval(loadStatus, 30000);
+</script>
+{% endblock %}

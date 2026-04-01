@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex align-items-baseline justify-content-between mb-3">
+    <h1 class="page-title mb-0">Disk Usage</h1>
+    <button class="btn btn-sm btn-outline-secondary" onclick="loadDisk()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+</div>
+
+<!-- Overall disk -->
+<div class="section-header">Root Filesystem</div>
+<div class="card mb-4">
+    <div class="card-body">
+        <pre id="df-output" class="mb-0" style="font-size:0.8rem;font-family:monospace;color:#334155">Loading…</pre>
+    </div>
+</div>
+
+<!-- Per-path breakdown -->
+<div id="path-sections">
+    <div class="text-muted">Loading…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDisk() {
+    document.getElementById('df-output').textContent = 'Loading…';
+    document.getElementById('path-sections').innerHTML = '<div class="text-muted">Loading…</div>';
+
+    try {
+        const res  = await fetch('/api/disk');
+        const data = await res.json();
+
+        document.getElementById('df-output').textContent = data.df || '(unavailable)';
+
+        const container = document.getElementById('path-sections');
+        if (!data.sections || data.sections.length === 0) {
+            container.innerHTML = '<div class="text-muted">No disk paths configured.</div>';
+            return;
+        }
+
+        let html = '';
+        for (const sec of data.sections) {
+            html += `<div class="section-header">${sec.label}</div>`;
+            if (!sec.exists) {
+                html += `<div class="card mb-4"><div class="card-body text-muted">Path not found: <code>${sec.path}</code></div></div>`;
+                continue;
+            }
+
+            const maxBytes = sec.subdirs.length
+                ? Math.max(...sec.subdirs.map(d => d.size_bytes))
+                : 1;
+
+            let rows = '';
+            for (const dir of sec.subdirs) {
+                const pct = maxBytes > 0 ? Math.round((dir.size_bytes / maxBytes) * 100) : 0;
+                rows += `
+                <tr>
+                    <td style="font-family:monospace;font-size:0.82rem">${dir.name}</td>
+                    <td style="width:35%">
+                        <div class="subdir-bar"><div class="subdir-bar-fill" style="width:${pct}%"></div></div>
+                    </td>
+                    <td class="text-end" style="font-size:0.82rem;white-space:nowrap">${dir.size}</td>
+                    <td class="text-end text-muted" style="font-size:0.78rem">${dir.files} files</td>
+                </tr>`;
+            }
+
+            html += `
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span><code style="font-size:0.78rem">${sec.path}</code></span>
+                    <span class="text-muted" style="font-size:0.78rem">${sec.total_size} &nbsp;·&nbsp; ${sec.total_files} files</span>
+                </div>
+                <div class="card-body p-0">
+                    ${rows.length ? `
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Folder</th>
+                                <th>Size</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Files</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>` : '<div class="px-3 py-3 text-muted">Directory is empty.</div>'}
+                </div>
+            </div>`;
+        }
+        container.innerHTML = html;
+    } catch (err) {
+        document.getElementById('path-sections').innerHTML =
+            `<div class="text-danger">Failed to load: ${err.message}</div>`;
+    }
+}
+
+loadDisk();
+</script>
+{% endblock %}

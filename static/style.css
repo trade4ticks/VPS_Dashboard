@@ -1,0 +1,324 @@
+:root {
+    --sidebar-bg: #1e2a3a;
+    --sidebar-text: #8fa3b8;
+    --sidebar-active-text: #60a5fa;
+    --sidebar-active-bg: rgba(96, 165, 250, 0.1);
+    --sidebar-width: 215px;
+    --content-bg: #f1f5f9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--content-bg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 0.9rem;
+    color: #1e293b;
+}
+
+/* ---- Layout ---- */
+
+#layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+#sidebar {
+    width: var(--sidebar-width);
+    min-height: 100vh;
+    background: var(--sidebar-bg);
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-brand {
+    padding: 1.1rem 1rem 1rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    letter-spacing: 0.01em;
+}
+
+#sidebar .nav { padding: 0.5rem 0; }
+
+#sidebar .nav-link {
+    color: var(--sidebar-text);
+    padding: 0.6rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    border-radius: 0;
+    font-size: 0.875rem;
+    border-left: 3px solid transparent;
+    transition: background 0.12s, color 0.12s;
+}
+
+#sidebar .nav-link:hover {
+    color: #cbd5e1;
+    background: rgba(255,255,255,0.06);
+    border-left-color: transparent;
+}
+
+#sidebar .nav-link.active {
+    color: var(--sidebar-active-text);
+    background: var(--sidebar-active-bg);
+    border-left-color: var(--sidebar-active-text);
+}
+
+#content {
+    flex: 1;
+    padding: 2rem 2.25rem;
+    overflow-y: auto;
+}
+
+.page-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 1.5rem;
+}
+
+/* ---- Status badges ---- */
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.22rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.status-badge .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.s-active  { background: #dcfce7; color: #15803d; }
+.s-active .dot  { background: #22c55e; }
+
+.s-failed  { background: #fee2e2; color: #b91c1c; }
+.s-failed .dot  { background: #ef4444; }
+
+.s-inactive { background: #f1f5f9; color: #64748b; }
+.s-inactive .dot { background: #94a3b8; }
+
+.s-unknown { background: #fef3c7; color: #92400e; }
+.s-unknown .dot { background: #f59e0b; }
+
+/* ---- Cards ---- */
+
+.card {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    background: #fff;
+    margin-bottom: 1.25rem;
+}
+
+.card-header {
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.8rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #0f172a;
+    border-radius: 8px 8px 0 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-body { padding: 1.25rem; }
+
+/* ---- Terminal output ---- */
+
+.output-box {
+    background: #0f172a;
+    color: #94a3b8;
+    font-family: "Consolas", "Monaco", "Menlo", monospace;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    padding: 0.9rem 1rem;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 380px;
+    overflow-y: auto;
+    margin-top: 1rem;
+    display: none;
+}
+
+.output-box.ok  { color: #86efac; }
+.output-box.err { color: #fca5a5; }
+
+/* ---- Log viewer ---- */
+
+.log-box {
+    background: #0f172a;
+    color: #cbd5e1;
+    font-family: "Consolas", "Monaco", "Menlo", monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    padding: 1rem;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    height: 520px;
+    overflow-y: auto;
+}
+
+.log-meta {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-bottom: 0.6rem;
+}
+
+/* ---- File tree ---- */
+
+.file-tree {
+    font-family: "Consolas", "Monaco", "Menlo", monospace;
+    font-size: 0.83rem;
+    line-height: 1;
+}
+
+.tree-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.22rem 0.3rem;
+    border-radius: 4px;
+    cursor: default;
+    user-select: none;
+}
+
+.tree-row.tree-dir { cursor: pointer; color: #1d4ed8; }
+.tree-row.tree-dir:hover { background: #eff6ff; }
+
+.tree-row.tree-file { color: #334155; }
+.tree-row.tree-file:hover { background: #f8fafc; }
+
+.tree-chevron {
+    display: inline-block;
+    width: 12px;
+    transition: transform 0.15s;
+    color: #94a3b8;
+    flex-shrink: 0;
+}
+
+.tree-name { flex: 1; }
+
+.tree-meta {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    margin-left: 0.5rem;
+    white-space: nowrap;
+}
+
+.tree-children {
+    margin-left: 1.15rem;
+    border-left: 1px solid #e2e8f0;
+    padding-left: 0.4rem;
+}
+
+/* ---- Disk page ---- */
+
+.subdir-bar {
+    height: 5px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+.subdir-bar-fill {
+    height: 100%;
+    background: #3b82f6;
+    border-radius: 3px;
+}
+
+/* ---- Cheat sheet ---- */
+
+.cheat-section { margin-bottom: 1.75rem; }
+
+.cheat-section-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    margin-bottom: 0.6rem;
+}
+
+.cheat-card {
+    background: #1e2a3a;
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+}
+
+.cheat-item {
+    margin-bottom: 0.75rem;
+}
+.cheat-item:last-child { margin-bottom: 0; }
+
+.cheat-cmd {
+    background: rgba(255,255,255,0.07);
+    border-radius: 4px;
+    padding: 0.38rem 0.7rem;
+    font-family: "Consolas", "Monaco", monospace;
+    font-size: 0.8rem;
+    color: #e2e8f0;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.12s;
+}
+
+.cheat-cmd:hover { background: rgba(255,255,255,0.13); }
+.cheat-cmd.copied { background: rgba(34,197,94,0.15); }
+
+.cheat-copy-hint {
+    font-size: 0.68rem;
+    color: #475569;
+    flex-shrink: 0;
+}
+
+.cheat-desc {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin: 0.2rem 0 0 0.7rem;
+}
+
+/* ---- Misc ---- */
+
+.section-header {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    margin-bottom: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.btn { font-size: 0.82rem; }
+.btn-sm { font-size: 0.78rem; padding: 0.28rem 0.65rem; }
+.table-sm td, .table-sm th { font-size: 0.82rem; }
+
+.spinner-border-sm { width: 0.85rem; height: 0.85rem; }
+
+.text-muted { color: #64748b !important; }
