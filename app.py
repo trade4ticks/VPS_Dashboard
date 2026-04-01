@@ -83,6 +83,7 @@ def files(request: Request):
     return templates.TemplateResponse(request, "files.html", {
         "active": "files",
         "projects": config.PROJECTS,
+        "browse_paths": config.BROWSE_PATHS,
     })
 
 
@@ -212,6 +213,7 @@ def build_tree(p: Path, depth: int = 0) -> dict | None:
 @app.get("/api/files")
 def api_files(path: str = None):
     allowed_roots = {os.path.realpath(p["path"]) for p in config.PROJECTS.values()}
+    allowed_roots |= {os.path.realpath(p["path"]) for p in config.BROWSE_PATHS.values()}
 
     if path is None:
         return [

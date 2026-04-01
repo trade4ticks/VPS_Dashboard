@@ -49,7 +49,15 @@ LOG_FILES = {
     },
 }
 
+# Non-project directories shown in the File Browser (no git/deploy buttons).
+BROWSE_PATHS = {
+    "spx_options": {
+        "name": "SPX Options Data",
+        "path": "/data/spx_options",
+    },
+}
+
 # Directories tracked on the Disk page.
 DISK_PATHS = {
-    "SPX Options (Parquet)": "/root/Thetadata_Raw_SPX/data/spx_options",
+    "SPX Options (Parquet)": "/data/spx_options",
 }

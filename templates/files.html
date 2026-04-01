@@ -5,18 +5,28 @@
 
 <div class="card">
     <div class="card-header">
-        <div class="d-flex gap-2 flex-wrap" id="project-buttons">
+        <div class="d-flex gap-2 flex-wrap align-items-center" id="project-buttons">
+            <span class="text-muted me-1" style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Projects</span>
             {% for key, proj in projects.items() %}
             <button class="btn btn-sm btn-outline-secondary"
                     onclick="loadProject('{{ proj.path }}', '{{ proj.name }}', this)">
                 <i class="bi bi-folder2"></i> {{ proj.name }}
             </button>
             {% endfor %}
+            {% if browse_paths %}
+            <span class="text-muted mx-1" style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Data</span>
+            {% for key, bp in browse_paths.items() %}
+            <button class="btn btn-sm btn-outline-primary"
+                    onclick="loadProject('{{ bp.path }}', '{{ bp.name }}', this)">
+                <i class="bi bi-database"></i> {{ bp.name }}
+            </button>
+            {% endfor %}
+            {% endif %}
         </div>
     </div>
     <div class="card-body">
         <div id="tree-status" class="text-muted" style="font-size:0.82rem">
-            Select a project above to browse its files.
+            Select a project or data directory above to browse its files.
         </div>
         <div id="tree-container" class="file-tree mt-2"></div>
     </div>
