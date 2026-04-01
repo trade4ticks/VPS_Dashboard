@@ -173,60 +173,63 @@ def api_deploy(project_key: str):
 
 
 # ---------------------------------------------------------------------------
-# API — file browser
+# API — file browser (lazy: returns immediate children only)
 # ---------------------------------------------------------------------------
 
-SKIP_DIRS = {
-    ".venv", "__pycache__", ".git", "node_modules", ".idea",
-    "diskcache", ".dash_cache", ".tasty_sessions",
-}
-
-def build_tree(p: Path, depth: int = 0) -> dict | None:
-    if p.name.startswith(".") and depth > 0:
-        return None
-    if p.name in SKIP_DIRS:
-        return None
-    try:
-        if p.is_file():
-            stat = p.stat()
-            return {
-                "name": p.name,
-                "type": "file",
-                "size": format_bytes(stat.st_size),
-                "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-            }
-        if p.is_dir():
-            if depth >= 5:
-                return {"name": p.name, "type": "dir", "children": [], "truncated": True}
-            children = []
-            # dirs first, then files, alphabetical within each group
-            entries = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
-            for child in entries:
-                node = build_tree(child, depth + 1)
-                if node:
-                    children.append(node)
-            return {"name": p.name, "type": "dir", "children": children}
-    except (PermissionError, OSError):
-        return None
+# Virtual/kernel filesystems — never descend into these
+SKIP_ROOTS = {"/proc", "/sys", "/dev", "/run", "/snap"}
+# Noisy dirs to hide everywhere
+SKIP_NAMES = {".venv", "__pycache__", ".git", "node_modules", ".idea",
+              "diskcache", ".dash_cache", ".tasty_sessions"}
 
 
-@app.get("/api/files")
-def api_files(path: str = None):
-    allowed_roots = {os.path.realpath(p["path"]) for p in config.PROJECTS.values()}
-    allowed_roots |= {os.path.realpath(p["path"]) for p in config.BROWSE_PATHS.values()}
-
-    if path is None:
-        return [
-            {"key": k, "name": v["name"], "path": v["path"]}
-            for k, v in config.PROJECTS.items()
-        ]
-
+@app.get("/api/browse")
+def api_browse(path: str = "/"):
     real = os.path.realpath(path)
-    if not any(real == r or real.startswith(r + os.sep) for r in allowed_roots):
-        raise HTTPException(status_code=403, detail="Path outside allowed directories")
 
-    tree = build_tree(Path(real))
-    return tree or {"name": os.path.basename(real), "type": "dir", "children": []}
+    for skip in SKIP_ROOTS:
+        if real == skip or real.startswith(skip + "/"):
+            return []
+
+    if not os.path.isdir(real):
+        raise HTTPException(status_code=400, detail="Not a directory")
+
+    items = []
+    try:
+        entries = sorted(os.scandir(real), key=lambda e: (e.is_file(), e.name.lower()))
+        for entry in entries:
+            if entry.name in SKIP_NAMES:
+                continue
+            # Hide dot-files except at top-level roots like /root
+            if entry.name.startswith(".") and real not in ("/", "/root"):
+                continue
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    try:
+                        child_count = sum(1 for _ in os.scandir(entry.path))
+                    except PermissionError:
+                        child_count = None
+                    items.append({
+                        "name": entry.name,
+                        "type": "dir",
+                        "path": entry.path,
+                        "items": child_count,
+                    })
+                elif entry.is_file(follow_symlinks=False):
+                    stat = entry.stat()
+                    items.append({
+                        "name": entry.name,
+                        "type": "file",
+                        "path": entry.path,
+                        "size": format_bytes(stat.st_size),
+                        "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                    })
+            except (PermissionError, OSError):
+                continue
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied reading " + real)
+
+    return items
 
 
 # ---------------------------------------------------------------------------

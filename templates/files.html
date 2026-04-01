@@ -4,161 +4,200 @@
 <h1 class="page-title">File Browser</h1>
 
 <div class="card">
-    <div class="card-header">
-        <div class="d-flex gap-2 flex-wrap align-items-center" id="project-buttons">
-            <span class="text-muted me-1" style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Projects</span>
+    <!-- Root shortcuts -->
+    <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button class="btn btn-sm btn-secondary" onclick="setRoot('/', 'Full VPS', this)">
+                <i class="bi bi-hdd-network"></i> Full VPS
+            </button>
+            <span class="text-muted" style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Projects</span>
             {% for key, proj in projects.items() %}
             <button class="btn btn-sm btn-outline-secondary"
-                    onclick="loadProject('{{ proj.path }}', '{{ proj.name }}', this)">
+                    onclick="setRoot('{{ proj.path }}', '{{ proj.name }}', this)">
                 <i class="bi bi-folder2"></i> {{ proj.name }}
             </button>
             {% endfor %}
             {% if browse_paths %}
-            <span class="text-muted mx-1" style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Data</span>
+            <span class="text-muted" style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Data</span>
             {% for key, bp in browse_paths.items() %}
             <button class="btn btn-sm btn-outline-primary"
-                    onclick="loadProject('{{ bp.path }}', '{{ bp.name }}', this)">
+                    onclick="setRoot('{{ bp.path }}', '{{ bp.name }}', this)">
                 <i class="bi bi-database"></i> {{ bp.name }}
             </button>
             {% endfor %}
             {% endif %}
         </div>
     </div>
-    <div class="card-body">
-        <div id="tree-status" class="text-muted" style="font-size:0.82rem">
-            Select a project or data directory above to browse its files.
+
+    <!-- Breadcrumb path bar -->
+    <div style="padding:.55rem 1.25rem;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-size:.78rem;font-family:monospace;color:#475569" id="path-bar">
+        &mdash;
+    </div>
+
+    <!-- Tree -->
+    <div class="card-body" style="padding:.75rem 1rem">
+        <div id="tree-status" class="text-muted" style="font-size:.82rem">
+            Select a root above to start browsing.
         </div>
-        <div id="tree-container" class="file-tree mt-2"></div>
+        <div id="tree-root" class="file-tree"></div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-let activeBtn = null;
+let activeRootBtn = null;
 
-async function loadProject(path, name, btn) {
-    const container = document.getElementById('tree-container');
-    const status = document.getElementById('tree-status');
+// ── Entry point ─────────────────────────────────────────────────────────────
 
-    // Toggle active button style
-    if (activeBtn) activeBtn.classList.replace('btn-secondary', 'btn-outline-secondary');
-    btn.classList.replace('btn-outline-secondary', 'btn-secondary');
-    activeBtn = btn;
+async function setRoot(path, label, btn) {
+    if (activeRootBtn) {
+        activeRootBtn.classList.remove('btn-secondary', 'btn-primary');
+        const wasOutline = activeRootBtn.dataset.outline === '1';
+        activeRootBtn.classList.add(wasOutline ? 'btn-outline-secondary' : 'btn-outline-secondary');
+    }
+    btn.dataset.outline = btn.classList.contains('btn-outline-secondary') || btn.classList.contains('btn-outline-primary') ? '1' : '0';
+    btn.classList.remove('btn-outline-secondary', 'btn-outline-primary');
+    btn.classList.add('btn-secondary');
+    activeRootBtn = btn;
 
-    status.textContent = 'Loading ' + name + '…';
+    document.getElementById('path-bar').textContent = path;
+    document.getElementById('tree-status').textContent = '';
+    const container = document.getElementById('tree-root');
+    container.innerHTML = '<div class="text-muted" style="font-size:.82rem">Loading\u2026</div>';
+
+    const children = await fetchChildren(path);
     container.innerHTML = '';
+    if (children === null) {
+        container.innerHTML = '<div class="text-danger" style="font-size:.82rem">Failed to load.</div>';
+        return;
+    }
+    renderChildren(children, container, path);
+}
 
+// ── API call ─────────────────────────────────────────────────────────────────
+
+async function fetchChildren(path) {
     try {
-        const res = await fetch('/api/files?path=' + encodeURIComponent(path));
-        if (!res.ok) { status.textContent = 'Error: ' + res.statusText; return; }
-        const tree = await res.json();
-        status.textContent = '';
-        renderNode(tree, container, 0);
-    } catch (err) {
-        status.textContent = 'Failed: ' + err.message;
+        const res = await fetch('/api/browse?path=' + encodeURIComponent(path));
+        if (!res.ok) return null;
+        return await res.json();
+    } catch {
+        return null;
     }
 }
 
+// ── Rendering ────────────────────────────────────────────────────────────────
+
 function fileIcon(name) {
     const ext = name.split('.').pop().toLowerCase();
-    const icons = {
-        py: 'bi-filetype-py', js: 'bi-filetype-js', ts: 'bi-filetype-tsx',
-        html: 'bi-filetype-html', css: 'bi-filetype-css',
-        json: 'bi-filetype-json', md: 'bi-filetype-md',
-        txt: 'bi-file-text', log: 'bi-file-text',
-        sql: 'bi-file-earmark-code', env: 'bi-file-lock',
-        parquet: 'bi-file-earmark-zip', csv: 'bi-filetype-csv',
-        yml: 'bi-file-earmark-code', yaml: 'bi-file-earmark-code',
-        toml: 'bi-file-earmark-code', cfg: 'bi-file-earmark-code',
-        sh: 'bi-terminal',
+    const map = {
+        py:'bi-filetype-py', js:'bi-filetype-js', ts:'bi-filetype-tsx',
+        html:'bi-filetype-html', css:'bi-filetype-css', json:'bi-filetype-json',
+        md:'bi-filetype-md', txt:'bi-file-text', log:'bi-file-text',
+        sql:'bi-file-earmark-code', sh:'bi-terminal', env:'bi-file-lock',
+        parquet:'bi-file-earmark-zip', csv:'bi-filetype-csv',
+        yml:'bi-file-earmark-code', yaml:'bi-file-earmark-code',
+        toml:'bi-file-earmark-code', cfg:'bi-file-earmark-code',
+        service:'bi-file-earmark-code',
     };
-    return 'bi ' + (icons[ext] || 'bi-file-earmark');
+    return 'bi ' + (map[ext] || 'bi-file-earmark');
 }
 
-function renderNode(node, container, depth) {
-    if (!node) return;
+function renderChildren(items, container, parentPath) {
+    if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tree-row';
+        empty.style.color = '#94a3b8';
+        empty.textContent = '(empty)';
+        container.appendChild(empty);
+        return;
+    }
 
-    const row = document.createElement('div');
+    for (const item of items) {
+        const row = document.createElement('div');
 
-    if (node.type === 'dir') {
-        row.className = 'tree-row tree-dir';
+        if (item.type === 'dir') {
+            row.className = 'tree-row tree-dir';
 
-        const chevron = document.createElement('i');
-        chevron.className = 'bi bi-chevron-right tree-chevron';
+            const chevron = document.createElement('i');
+            chevron.className = 'bi bi-chevron-right tree-chevron';
 
-        const icon = document.createElement('i');
-        icon.className = 'bi bi-folder2';
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-folder2';
 
-        const name = document.createElement('span');
-        name.className = 'tree-name';
-        name.textContent = node.name;
+            const name = document.createElement('span');
+            name.className = 'tree-name';
+            name.textContent = item.name;
 
-        if (node.truncated) {
-            const hint = document.createElement('span');
-            hint.className = 'tree-meta';
-            hint.textContent = '(depth limit)';
+            const meta = document.createElement('span');
+            meta.className = 'tree-meta';
+            meta.textContent = item.items !== null && item.items !== undefined
+                ? item.items + ' item' + (item.items !== 1 ? 's' : '')
+                : '';
+
             row.appendChild(chevron);
             row.appendChild(icon);
             row.appendChild(name);
-            row.appendChild(hint);
-            row.style.opacity = '0.5';
+            row.appendChild(meta);
+
+            // Children container — loaded lazily on first expand
+            const childWrap = document.createElement('div');
+            childWrap.className = 'tree-children';
+            childWrap.style.display = 'none';
+            childWrap.dataset.loaded = '0';
+            childWrap.dataset.path = item.path;
+
+            row.addEventListener('click', async () => {
+                const open = childWrap.style.display !== 'none';
+
+                if (open) {
+                    childWrap.style.display = 'none';
+                    chevron.style.transform = '';
+                    icon.className = 'bi bi-folder2';
+                    document.getElementById('path-bar').textContent = parentPath;
+                } else {
+                    chevron.style.transform = 'rotate(90deg)';
+                    icon.className = 'bi bi-folder2-open';
+                    childWrap.style.display = 'block';
+                    document.getElementById('path-bar').textContent = item.path;
+
+                    if (childWrap.dataset.loaded === '0') {
+                        childWrap.innerHTML = '<div class="tree-row" style="color:#94a3b8">Loading\u2026</div>';
+                        const kids = await fetchChildren(item.path);
+                        childWrap.innerHTML = '';
+                        childWrap.dataset.loaded = '1';
+                        if (kids === null) {
+                            childWrap.innerHTML = '<div class="tree-row" style="color:#ef4444">Failed to load.</div>';
+                        } else {
+                            renderChildren(kids, childWrap, item.path);
+                        }
+                    }
+                }
+            });
+
             container.appendChild(row);
-            return;
-        }
+            container.appendChild(childWrap);
 
-        row.appendChild(chevron);
-        row.appendChild(icon);
-        row.appendChild(name);
-
-        const children = document.createElement('div');
-        children.className = 'tree-children';
-        children.style.display = depth < 1 ? 'block' : 'none';
-        if (depth < 1) {
-            chevron.style.transform = 'rotate(90deg)';
-            icon.className = 'bi bi-folder2-open';
-        }
-
-        if (node.children && node.children.length > 0) {
-            for (const child of node.children) {
-                renderNode(child, children, depth + 1);
-            }
         } else {
-            const empty = document.createElement('div');
-            empty.className = 'tree-row';
-            empty.style.color = '#94a3b8';
-            empty.textContent = '(empty)';
-            children.appendChild(empty);
+            row.className = 'tree-row tree-file';
+
+            const icon = document.createElement('i');
+            icon.className = fileIcon(item.name);
+
+            const name = document.createElement('span');
+            name.className = 'tree-name';
+            name.textContent = item.name;
+
+            const meta = document.createElement('span');
+            meta.className = 'tree-meta';
+            meta.textContent = (item.size || '') + (item.modified ? '  ·  ' + item.modified : '');
+
+            row.appendChild(icon);
+            row.appendChild(name);
+            row.appendChild(meta);
+            container.appendChild(row);
         }
-
-        row.addEventListener('click', () => {
-            const open = children.style.display !== 'none';
-            children.style.display = open ? 'none' : 'block';
-            chevron.style.transform = open ? '' : 'rotate(90deg)';
-            icon.className = open ? 'bi bi-folder2' : 'bi bi-folder2-open';
-        });
-
-        container.appendChild(row);
-        container.appendChild(children);
-
-    } else {
-        row.className = 'tree-row tree-file';
-
-        const icon = document.createElement('i');
-        icon.className = fileIcon(node.name);
-
-        const name = document.createElement('span');
-        name.className = 'tree-name';
-        name.textContent = node.name;
-
-        const meta = document.createElement('span');
-        meta.className = 'tree-meta';
-        meta.textContent = node.size + (node.modified ? '  ·  ' + node.modified : '');
-
-        row.appendChild(icon);
-        row.appendChild(name);
-        row.appendChild(meta);
-        container.appendChild(row);
     }
 }
 </script>
