@@ -235,6 +235,23 @@ body {
     padding-left: 0.4rem;
 }
 
+.tree-size-badge {
+    font-size: 0.7rem;
+    font-family: "Consolas", "Monaco", monospace;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    margin-left: 0.5rem;
+    flex-shrink: 0;
+    min-width: 52px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.sz-loading { color: #cbd5e1; background: transparent; }
+.sz-small   { color: #64748b; background: #f1f5f9; }
+.sz-medium  { color: #92400e; background: #fef3c7; }
+.sz-large   { color: #b91c1c; background: #fee2e2; font-weight: 600; }
+
 /* ---- Disk page ---- */
 
 .subdir-bar {

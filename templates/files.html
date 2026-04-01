@@ -104,6 +104,55 @@ function fileIcon(name) {
     return 'bi ' + (map[ext] || 'bi-file-earmark');
 }
 
+// ── Disk usage ───────────────────────────────────────────────────────────────
+
+// After rendering children, fetch sizes for all subdirs and update badges.
+async function loadDirSizes(dirItems, sizeBadgeMap) {
+    const dirPaths = dirItems.filter(i => i.type === 'dir').map(i => i.path);
+    if (!dirPaths.length) return;
+
+    const qs = dirPaths.map(p => 'paths=' + encodeURIComponent(p)).join('&');
+    try {
+        const res = await fetch('/api/du?' + qs);
+        const sizes = await res.json();
+        for (const [path, size] of Object.entries(sizes)) {
+            const badge = sizeBadgeMap[path];
+            if (!badge) continue;
+            badge.textContent = size;
+            // Colour-code by magnitude
+            const bytes = parseSize(size);
+            badge.className = 'tree-size-badge ' + (
+                bytes >= 1e9 ? 'sz-large' :
+                bytes >= 100e6 ? 'sz-medium' : 'sz-small'
+            );
+        }
+    } catch { /* silently ignore */ }
+}
+
+function parseSize(s) {
+    const m = s.match(/([\d.]+)\s*(B|KB|MB|GB|TB)/);
+    if (!m) return 0;
+    const units = {B:1, KB:1024, MB:1024**2, GB:1024**3, TB:1024**4};
+    return parseFloat(m[1]) * (units[m[2]] || 1);
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+
+function fileIcon(name) {
+    const ext = name.split('.').pop().toLowerCase();
+    const map = {
+        py:'bi-filetype-py', js:'bi-filetype-js', ts:'bi-filetype-tsx',
+        html:'bi-filetype-html', css:'bi-filetype-css', json:'bi-filetype-json',
+        md:'bi-filetype-md', txt:'bi-file-text', log:'bi-file-text',
+        sql:'bi-file-earmark-code', sh:'bi-terminal', env:'bi-file-lock',
+        parquet:'bi-file-earmark-zip', csv:'bi-filetype-csv',
+        yml:'bi-file-earmark-code', yaml:'bi-file-earmark-code',
+        toml:'bi-file-earmark-code', cfg:'bi-file-earmark-code',
+        service:'bi-file-earmark-code',
+    };
+    return 'bi ' + (map[ext] || 'bi-file-earmark');
+}
+
 function renderChildren(items, container, parentPath) {
     if (!items.length) {
         const empty = document.createElement('div');
@@ -113,6 +162,8 @@ function renderChildren(items, container, parentPath) {
         container.appendChild(empty);
         return;
     }
+
+    const sizeBadgeMap = {};  // path → badge element, for size updates
 
     for (const item of items) {
         const row = document.createElement('div');
@@ -136,10 +187,17 @@ function renderChildren(items, container, parentPath) {
                 ? item.items + ' item' + (item.items !== 1 ? 's' : '')
                 : '';
 
+            // Size badge — starts as spinner, filled in by loadDirSizes()
+            const sizeBadge = document.createElement('span');
+            sizeBadge.className = 'tree-size-badge sz-loading';
+            sizeBadge.textContent = '…';
+            sizeBadgeMap[item.path] = sizeBadge;
+
             row.appendChild(chevron);
             row.appendChild(icon);
             row.appendChild(name);
             row.appendChild(meta);
+            row.appendChild(sizeBadge);
 
             // Children container — loaded lazily on first expand
             const childWrap = document.createElement('div');
@@ -171,6 +229,8 @@ function renderChildren(items, container, parentPath) {
                             childWrap.innerHTML = '<div class="tree-row" style="color:#ef4444">Failed to load.</div>';
                         } else {
                             renderChildren(kids, childWrap, item.path);
+                            // Fetch sizes for subdirs after tree renders
+                            loadDirSizes(kids, childWrap._sizeBadgeMap || {});
                         }
                     }
                 }
@@ -199,6 +259,11 @@ function renderChildren(items, container, parentPath) {
             container.appendChild(row);
         }
     }
+
+    // Store map on container so parent click handler can find it
+    container._sizeBadgeMap = sizeBadgeMap;
+    // Kick off size fetch for all directories at this level
+    loadDirSizes(items, sizeBadgeMap);
 }
 </script>
 {% endblock %}

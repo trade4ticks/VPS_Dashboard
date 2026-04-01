@@ -4,7 +4,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -230,6 +230,27 @@ def api_browse(path: str = "/"):
         raise HTTPException(status_code=403, detail="Permission denied reading " + real)
 
     return items
+
+
+@app.get("/api/du")
+def api_du(paths: list[str] = Query(default=[])):
+    """Return disk usage for a list of paths. Called after a directory expands."""
+    if not paths:
+        return {}
+    # Single du call across all paths — much faster than one call per path
+    result = subprocess.run(
+        ["du", "-sb", "--"] + paths,
+        capture_output=True, text=True, timeout=60,
+    )
+    sizes = {}
+    for line in result.stdout.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) == 2:
+            try:
+                sizes[parts[1]] = format_bytes(int(parts[0]))
+            except ValueError:
+                pass
+    return sizes
 
 
 # ---------------------------------------------------------------------------
