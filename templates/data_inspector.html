@@ -51,8 +51,7 @@
       <code>read_parquet('/data/spx_options/**/*.parquet')</code>. Results capped at 200 rows.
     </p>
     <textarea id="sql-input" class="form-control font-monospace mb-2"
-              rows="5" spellcheck="false"
-              placeholder="SELECT * FROM read_parquet('/data/spx_options/20250722/**/*.parquet') LIMIT 20"></textarea>
+              rows="5" spellcheck="false">SELECT * FROM read_parquet('/data/spx_options/20250722/**/*.parquet') LIMIT 20</textarea>
     <div class="d-flex gap-2">
       <button class="btn btn-primary" onclick="doSqlQuery()">
         <i class="bi bi-play-fill"></i> Run Query
