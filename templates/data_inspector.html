@@ -325,10 +325,32 @@ async function doPreview() {
   }
 }
 
+// Auto-populate expiration dropdown when a valid 8-digit date is typed
+document.getElementById('inp-date').addEventListener('input', function() {
+  if (/^\d{8}$/.test(this.value.trim())) loadExpirations(this.value.trim());
+});
+
+async function loadExpirations(d) {
+  try {
+    const data = await apiFetch(`/api/parquet/expirations?date=${d}`);
+    const sel = document.getElementById('sel-exp');
+    sel.innerHTML = '<option value="">(all expirations)</option>';
+    data.expirations.forEach(e => {
+      const o = document.createElement('option');
+      o.value = e; o.textContent = e;
+      sel.appendChild(o);
+    });
+  } catch(_) {}  // silently ignore if date folder doesn't exist yet
+}
+
 // Auto-fill date input from URL param if present
 (function() {
   const p = new URLSearchParams(location.search);
-  if (p.get('date')) document.getElementById('inp-date').value = p.get('date');
+  if (p.get('date')) {
+    const d = p.get('date');
+    document.getElementById('inp-date').value = d;
+    if (/^\d{8}$/.test(d)) loadExpirations(d);
+  }
 })();
 </script>
 {% endblock %}
