@@ -1,9 +1,11 @@
 import os
+import re
 import socket
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
+import duckdb
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -103,6 +105,11 @@ def disk(request: Request):
 @app.get("/cheatsheet")
 def cheatsheet(request: Request):
     return templates.TemplateResponse(request, "cheatsheet.html", {"active": "cheatsheet"})
+
+
+@app.get("/data-inspector")
+def data_inspector(request: Request):
+    return templates.TemplateResponse(request, "data_inspector.html", {"active": "data_inspector"})
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +352,186 @@ def api_crontab():
         if line.strip() and not line.strip().startswith("#")
     ]
     return {"entries": entries}
+
+
+# ---------------------------------------------------------------------------
+# API — Parquet / Data Inspector
+# ---------------------------------------------------------------------------
+
+PARQUET_BASE = "/data/spx_options"
+_DATE_RE = re.compile(r"^\d{8}$")
+_SAFE_NAME_RE = re.compile(r"^[\w\-\.]+$")
+
+
+def _require_date(date: str) -> None:
+    if not _DATE_RE.match(date):
+        raise HTTPException(status_code=400, detail="Invalid date — use YYYYMMDD (e.g. 20250722)")
+
+
+def _date_path(date: str) -> Path:
+    """Return Path for the date folder and verify it stays within PARQUET_BASE."""
+    candidate = (Path(PARQUET_BASE) / date).resolve()
+    base = Path(PARQUET_BASE).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path traversal detected")
+    return candidate
+
+
+def _parquet_glob(date: str, expiration: str | None) -> str:
+    if expiration:
+        return f"{PARQUET_BASE}/{date}/{expiration}/*.parquet"
+    return f"{PARQUET_BASE}/{date}/**/*.parquet"
+
+
+@app.get("/api/parquet/inspect")
+def api_parquet_inspect(date: str):
+    _require_date(date)
+    folder = _date_path(date)
+
+    if not folder.exists():
+        return {"exists": False, "date": date, "path": str(folder)}
+
+    files, subfolders, total_size = [], [], 0
+
+    for entry in sorted(folder.iterdir()):
+        try:
+            if entry.is_dir():
+                try:
+                    size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+                    count = sum(1 for f in entry.rglob("*") if f.is_file())
+                except (PermissionError, OSError):
+                    size, count = 0, 0
+                subfolders.append({"name": entry.name, "size": format_bytes(size), "files": count})
+                total_size += size
+            elif entry.is_file() and entry.suffix == ".parquet":
+                stat = entry.stat()
+                files.append({"name": entry.name, "size": format_bytes(stat.st_size)})
+                total_size += stat.st_size
+        except (PermissionError, OSError):
+            continue
+
+    return {
+        "exists": True,
+        "date": date,
+        "path": str(folder),
+        "files": files,
+        "subfolders": subfolders,
+        "total_size": format_bytes(total_size),
+        "total_file_count": len(files) + sum(s["files"] for s in subfolders),
+    }
+
+
+@app.get("/api/parquet/expirations")
+def api_parquet_expirations(date: str):
+    _require_date(date)
+    folder = _date_path(date)
+
+    if not folder.exists():
+        raise HTTPException(status_code=404, detail=f"Date folder not found: {folder}")
+
+    expirations = sorted(e.name for e in folder.iterdir() if e.is_dir())
+    return {"date": date, "expirations": expirations}
+
+
+@app.get("/api/parquet/schema")
+def api_parquet_schema(date: str, expiration: str = None):
+    _require_date(date)
+    _date_path(date)  # validate path
+
+    if expiration and not _SAFE_NAME_RE.match(expiration):
+        raise HTTPException(status_code=400, detail="Invalid expiration value")
+
+    glob = _parquet_glob(date, expiration)
+    try:
+        con = duckdb.connect()
+        rows = con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{glob}') LIMIT 0"
+        ).fetchall()
+        con.close()
+        return {
+            "date": date,
+            "expiration": expiration,
+            "columns": [{"name": r[0], "type": r[1]} for r in rows],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"DuckDB: {exc}")
+
+
+@app.get("/api/parquet/row-counts")
+def api_parquet_row_counts(date: str, expiration: str = None):
+    _require_date(date)
+    folder = _date_path(date)
+
+    if not folder.exists():
+        raise HTTPException(status_code=404, detail="Date folder not found")
+
+    if expiration and not _SAFE_NAME_RE.match(expiration):
+        raise HTTPException(status_code=400, detail="Invalid expiration value")
+
+    try:
+        con = duckdb.connect()
+        results = []
+
+        if expiration:
+            glob = _parquet_glob(date, expiration)
+            count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{glob}')").fetchone()[0]
+            results.append({"expiration": expiration, "rows": count})
+        else:
+            subfolders = sorted(e.name for e in folder.iterdir() if e.is_dir())
+            if subfolders:
+                for exp in subfolders:
+                    try:
+                        glob = _parquet_glob(date, exp)
+                        count = con.execute(
+                            f"SELECT COUNT(*) FROM read_parquet('{glob}')"
+                        ).fetchone()[0]
+                        results.append({"expiration": exp, "rows": count})
+                    except Exception:
+                        results.append({"expiration": exp, "rows": None})
+            else:
+                glob = f"{PARQUET_BASE}/{date}/*.parquet"
+                count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{glob}')").fetchone()[0]
+                results.append({"expiration": "(all)", "rows": count})
+
+        con.close()
+        total = sum(r["rows"] for r in results if r["rows"] is not None)
+        return {"date": date, "expiration": expiration, "rows": results, "total": total}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"DuckDB: {exc}")
+
+
+@app.get("/api/parquet/preview")
+def api_parquet_preview(date: str, expiration: str = None, limit: int = 50):
+    _require_date(date)
+    _date_path(date)  # validate path
+
+    if expiration and not _SAFE_NAME_RE.match(expiration):
+        raise HTTPException(status_code=400, detail="Invalid expiration value")
+
+    limit = min(max(1, limit), 200)
+    glob = _parquet_glob(date, expiration)
+
+    try:
+        con = duckdb.connect()
+        col_rows = con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{glob}') LIMIT 0"
+        ).fetchall()
+        columns = [r[0] for r in col_rows]
+        data = con.execute(
+            f"SELECT * FROM read_parquet('{glob}') LIMIT {limit}"
+        ).fetchall()
+        con.close()
+        return {
+            "date": date,
+            "expiration": expiration,
+            "columns": columns,
+            "rows": [list(r) for r in data],
+            "count": len(data),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"DuckDB: {exc}")
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="page-title"><i class="bi bi-database-check"></i> Data Inspector</h1>
+<p class="text-muted mb-4">Read-only Parquet inspection for <code>/data/spx_options</code></p>
+
+<!-- Controls -->
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label fw-semibold">Trade Date</label>
+        <input type="text" id="inp-date" class="form-control font-monospace"
+               placeholder="20250722" maxlength="8" style="width:140px">
+      </div>
+      <div class="col-auto">
+        <label class="form-label fw-semibold">Expiration <span class="text-muted fw-normal">(optional)</span></label>
+        <select id="sel-exp" class="form-select" style="width:180px">
+          <option value="">(all expirations)</option>
+        </select>
+      </div>
+      <div class="col-auto d-flex gap-2 flex-wrap">
+        <button class="btn btn-secondary" onclick="doInspect()">
+          <i class="bi bi-folder2-open"></i> Inspect Folder
+        </button>
+        <button class="btn btn-outline-primary" onclick="doExpirations()">
+          <i class="bi bi-calendar3"></i> Expirations
+        </button>
+        <button class="btn btn-outline-primary" onclick="doRowCounts()">
+          <i class="bi bi-bar-chart"></i> Row Counts
+        </button>
+        <button class="btn btn-outline-primary" onclick="doSchema()">
+          <i class="bi bi-list-columns-reverse"></i> Schema
+        </button>
+        <button class="btn btn-outline-primary" onclick="doPreview()">
+          <i class="bi bi-table"></i> Preview Rows
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Status / loading -->
+<div id="status-bar" class="alert alert-info d-none" role="alert"></div>
+
+<!-- Results area -->
+<div id="results"></div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const resultsEl = document.getElementById('results');
+const statusEl  = document.getElementById('status-bar');
+
+function date()  { return document.getElementById('inp-date').value.trim(); }
+function exp()   { return document.getElementById('sel-exp').value; }
+
+function setStatus(msg, variant='info') {
+  statusEl.className = `alert alert-${variant}`;
+  statusEl.textContent = msg;
+  statusEl.classList.remove('d-none');
+}
+function clearStatus() { statusEl.classList.add('d-none'); }
+
+function requireDate() {
+  const d = date();
+  if (!/^\d{8}$/.test(d)) {
+    setStatus('Enter a valid 8-digit trade date, e.g. 20250722', 'warning');
+    return false;
+  }
+  return true;
+}
+
+function loading(label) {
+  setStatus(`Loading ${label}…`);
+  resultsEl.innerHTML = '<div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Querying…</div>';
+}
+
+async function apiFetch(url) {
+  const r = await fetch(url);
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.detail || `HTTP ${r.status}`);
+  return json;
+}
+
+function card(title, icon, body) {
+  return `<div class="card mb-4">
+    <div class="card-header fw-semibold"><i class="bi bi-${icon}"></i> ${title}</div>
+    <div class="card-body p-0">${body}</div>
+  </div>`;
+}
+
+function table(cols, rows, emptyMsg='No rows returned.') {
+  if (!rows.length) return `<p class="text-muted p-3 mb-0">${emptyMsg}</p>`;
+  const head = cols.map(c => `<th>${esc(String(c))}</th>`).join('');
+  const body = rows.map(r =>
+    `<tr>${r.map(v => `<td>${esc(v == null ? '' : String(v))}</td>`).join('')}</tr>`
+  ).join('');
+  return `<div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 font-monospace" style="font-size:.82rem">
+      <thead class="table-dark"><tr>${head}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  </div>`;
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ---- Inspect Folder --------------------------------------------------------
+async function doInspect() {
+  if (!requireDate()) return;
+  loading('folder info');
+  try {
+    const d = await apiFetch(`/api/parquet/inspect?date=${date()}`);
+    clearStatus();
+    if (!d.exists) {
+      resultsEl.innerHTML = card('Folder Info', 'folder2-open',
+        `<p class="text-warning p-3 mb-0"><i class="bi bi-exclamation-triangle"></i> Folder not found: <code>${esc(d.path)}</code></p>`);
+      return;
+    }
+
+    let html = `<div class="p-3 border-bottom">
+      <strong>Path:</strong> <code>${esc(d.path)}</code> &nbsp;
+      <strong>Total size:</strong> ${esc(d.total_size)} &nbsp;
+      <strong>Total files:</strong> ${d.total_file_count}
+    </div>`;
+
+    if (d.subfolders.length) {
+      html += `<div class="p-3 border-bottom"><strong>Subfolders (${d.subfolders.length}):</strong></div>`;
+      html += table(['Folder','Size','Files'],
+        d.subfolders.map(s => [s.name, s.size, s.files]));
+    }
+    if (d.files.length) {
+      html += `<div class="p-3 border-bottom"><strong>Parquet files in root (${d.files.length}):</strong></div>`;
+      html += table(['File','Size'], d.files.map(f => [f.name, f.size]));
+    }
+    if (!d.subfolders.length && !d.files.length) {
+      html += '<p class="text-muted p-3 mb-0">Folder exists but contains no parquet files or subfolders.</p>';
+    }
+
+    resultsEl.innerHTML = card('Folder Info', 'folder2-open', html);
+  } catch(e) {
+    clearStatus();
+    resultsEl.innerHTML = card('Error', 'exclamation-triangle',
+      `<p class="text-danger p-3 mb-0">${esc(e.message)}</p>`);
+  }
+}
+
+// ---- Expirations -----------------------------------------------------------
+async function doExpirations() {
+  if (!requireDate()) return;
+  loading('expirations');
+  try {
+    const d = await apiFetch(`/api/parquet/expirations?date=${date()}`);
+    clearStatus();
+
+    // Populate dropdown
+    const sel = document.getElementById('sel-exp');
+    sel.innerHTML = '<option value="">(all expirations)</option>';
+    d.expirations.forEach(e => {
+      const o = document.createElement('option');
+      o.value = e; o.textContent = e;
+      sel.appendChild(o);
+    });
+
+    const rows = d.expirations.map((e, i) => [i + 1, e]);
+    resultsEl.innerHTML = card(
+      `Available Expirations — ${d.date} (${d.expirations.length})`,
+      'calendar3',
+      d.expirations.length
+        ? table(['#','Expiration'], rows)
+        : '<p class="text-muted p-3 mb-0">No expiration subfolders found. Files may be stored flat in the date folder.</p>'
+    );
+  } catch(e) {
+    clearStatus();
+    resultsEl.innerHTML = card('Error', 'exclamation-triangle',
+      `<p class="text-danger p-3 mb-0">${esc(e.message)}</p>`);
+  }
+}
+
+// ---- Row Counts ------------------------------------------------------------
+async function doRowCounts() {
+  if (!requireDate()) return;
+  loading('row counts');
+  try {
+    const params = new URLSearchParams({date: date()});
+    if (exp()) params.set('expiration', exp());
+    const d = await apiFetch(`/api/parquet/row-counts?${params}`);
+    clearStatus();
+
+    const rows = d.rows.map(r => [
+      r.expiration,
+      r.rows == null ? '(error)' : r.rows.toLocaleString()
+    ]);
+    const footer = `<div class="p-3 border-top text-end fw-semibold">Total: ${d.total.toLocaleString()} rows</div>`;
+    resultsEl.innerHTML = card(
+      `Row Counts — ${d.date}${exp() ? ' / ' + exp() : ''}`,
+      'bar-chart',
+      table(['Expiration','Row Count'], rows) + footer
+    );
+  } catch(e) {
+    clearStatus();
+    resultsEl.innerHTML = card('Error', 'exclamation-triangle',
+      `<p class="text-danger p-3 mb-0">${esc(e.message)}</p>`);
+  }
+}
+
+// ---- Schema ----------------------------------------------------------------
+async function doSchema() {
+  if (!requireDate()) return;
+  loading('schema');
+  try {
+    const params = new URLSearchParams({date: date()});
+    if (exp()) params.set('expiration', exp());
+    const d = await apiFetch(`/api/parquet/schema?${params}`);
+    clearStatus();
+
+    const rows = d.columns.map((c, i) => [i + 1, c.name, c.type]);
+    resultsEl.innerHTML = card(
+      `Schema — ${d.date}${d.expiration ? ' / ' + d.expiration : ''} (${d.columns.length} columns)`,
+      'list-columns-reverse',
+      table(['#','Column','Type'], rows)
+    );
+  } catch(e) {
+    clearStatus();
+    resultsEl.innerHTML = card('Error', 'exclamation-triangle',
+      `<p class="text-danger p-3 mb-0">${esc(e.message)}</p>`);
+  }
+}
+
+// ---- Preview Rows ----------------------------------------------------------
+async function doPreview() {
+  if (!requireDate()) return;
+  loading('preview');
+  try {
+    const params = new URLSearchParams({date: date(), limit: 50});
+    if (exp()) params.set('expiration', exp());
+    const d = await apiFetch(`/api/parquet/preview?${params}`);
+    clearStatus();
+
+    resultsEl.innerHTML = card(
+      `Preview — ${d.date}${d.expiration ? ' / ' + d.expiration : ''} (${d.count} rows shown)`,
+      'table',
+      table(d.columns, d.rows)
+    );
+  } catch(e) {
+    clearStatus();
+    resultsEl.innerHTML = card('Error', 'exclamation-triangle',
+      `<p class="text-danger p-3 mb-0">${esc(e.message)}</p>`);
+  }
+}
+
+// Auto-fill date input from URL param if present
+(function() {
+  const p = new URLSearchParams(location.search);
+  if (p.get('date')) document.getElementById('inp-date').value = p.get('date');
+})();
+</script>
+{% endblock %}
