@@ -7,6 +7,7 @@ from pathlib import Path
 
 import duckdb
 from fastapi import FastAPI, HTTPException, Query, Request
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -526,6 +527,42 @@ def api_parquet_preview(date: str, expiration: str = None, limit: int = 50):
         return {
             "date": date,
             "expiration": expiration,
+            "columns": columns,
+            "rows": [list(r) for r in data],
+            "count": len(data),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"DuckDB: {exc}")
+
+
+_SQL_BLOCK_RE = re.compile(
+    r'\b(insert|update|delete|drop|create|alter|truncate|copy|export|attach|detach|load|install)\b',
+    re.IGNORECASE,
+)
+
+
+class SqlBody(BaseModel):
+    sql: str
+
+
+@app.post("/api/parquet/query")
+def api_parquet_query(body: SqlBody):
+    sql = body.sql.strip()
+    if not sql.upper().startswith("SELECT"):
+        raise HTTPException(status_code=400, detail="Only SELECT statements are allowed")
+    if _SQL_BLOCK_RE.search(sql):
+        raise HTTPException(status_code=400, detail="Query contains a disallowed keyword")
+
+    # Wrap in subquery to enforce hard row cap
+    wrapped = f"SELECT * FROM ({sql}) AS _q LIMIT 200"
+
+    try:
+        con = duckdb.connect()
+        col_rows = con.execute(f"DESCRIBE {wrapped}").fetchall()
+        columns = [r[0] for r in col_rows]
+        data = con.execute(wrapped).fetchall()
+        con.close()
+        return {
             "columns": columns,
             "rows": [list(r) for r in data],
             "count": len(data),

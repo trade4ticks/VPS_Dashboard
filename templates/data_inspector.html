@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="page-title"><i class="bi bi-database-check"></i> Data Inspector</h1>
+<h1 class="page-title"><i class="bi bi-database-check"></i> Parquet Inspector</h1>
 <p class="text-muted mb-4">Read-only Parquet inspection for <code>/data/spx_options</code></p>
 
 <!-- Controls -->
-<div class="card mb-4">
+<div class="card mb-3">
   <div class="card-body">
     <div class="row g-3 align-items-end">
       <div class="col-auto">
         <label class="form-label fw-semibold">Trade Date</label>
         <input type="text" id="inp-date" class="form-control font-monospace"
-               placeholder="20250722" maxlength="8" style="width:140px">
+               placeholder="YYYYMMDD" maxlength="8" style="width:140px">
       </div>
       <div class="col-auto">
         <label class="form-label fw-semibold">Expiration <span class="text-muted fw-normal">(optional)</span></label>
@@ -34,7 +34,32 @@
         <button class="btn btn-outline-primary" onclick="doPreview()">
           <i class="bi bi-table"></i> Preview Rows
         </button>
+        <button class="btn btn-outline-secondary" id="btn-sql-toggle" onclick="toggleSql()">
+          <i class="bi bi-terminal"></i> SQL Query
+        </button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- SQL Editor pane (hidden by default) -->
+<div id="sql-pane" class="card mb-3 d-none">
+  <div class="card-header fw-semibold"><i class="bi bi-terminal"></i> SQL Query</div>
+  <div class="card-body">
+    <p class="text-muted small mb-2">
+      SELECT-only. Use <code>read_parquet('/data/spx_options/...')</code> or a glob like
+      <code>read_parquet('/data/spx_options/**/*.parquet')</code>. Results capped at 200 rows.
+    </p>
+    <textarea id="sql-input" class="form-control font-monospace mb-2"
+              rows="5" spellcheck="false"
+              placeholder="SELECT * FROM read_parquet('/data/spx_options/20250722/**/*.parquet') LIMIT 20"></textarea>
+    <div class="d-flex gap-2">
+      <button class="btn btn-primary" onclick="doSqlQuery()">
+        <i class="bi bi-play-fill"></i> Run Query
+      </button>
+      <button class="btn btn-outline-secondary" onclick="clearSql()">
+        <i class="bi bi-x-circle"></i> Clear
+      </button>
     </div>
   </div>
 </div>
@@ -82,6 +107,17 @@ async function apiFetch(url) {
   return json;
 }
 
+async function apiPost(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.detail || `HTTP ${r.status}`);
+  return json;
+}
+
 function card(title, icon, body) {
   return `<div class="card mb-4">
     <div class="card-header fw-semibold"><i class="bi bi-${icon}"></i> ${title}</div>
@@ -89,9 +125,15 @@ function card(title, icon, body) {
   </div>`;
 }
 
+// Columns whose names contain these patterns get extra width so timestamps don't wrap
+const WIDE_COL_RE = /time|timestamp|datetime|date/i;
+
 function table(cols, rows, emptyMsg='No rows returned.') {
   if (!rows.length) return `<p class="text-muted p-3 mb-0">${emptyMsg}</p>`;
-  const head = cols.map(c => `<th>${esc(String(c))}</th>`).join('');
+  const head = cols.map(c => {
+    const style = WIDE_COL_RE.test(String(c)) ? ' style="min-width:200px"' : '';
+    return `<th${style}>${esc(String(c))}</th>`;
+  }).join('');
   const body = rows.map(r =>
     `<tr>${r.map(v => `<td>${esc(v == null ? '' : String(v))}</td>`).join('')}</tr>`
   ).join('');
@@ -105,6 +147,41 @@ function table(cols, rows, emptyMsg='No rows returned.') {
 
 function esc(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ---- SQL pane toggle -------------------------------------------------------
+function toggleSql() {
+  const pane = document.getElementById('sql-pane');
+  const btn  = document.getElementById('btn-sql-toggle');
+  const hidden = pane.classList.toggle('d-none');
+  btn.classList.toggle('btn-outline-secondary',  hidden);
+  btn.classList.toggle('btn-secondary',          !hidden);
+  if (!hidden) document.getElementById('sql-input').focus();
+}
+
+function clearSql() {
+  document.getElementById('sql-input').value = '';
+  document.getElementById('sql-input').focus();
+}
+
+// ---- SQL Query -------------------------------------------------------------
+async function doSqlQuery() {
+  const sql = document.getElementById('sql-input').value.trim();
+  if (!sql) { setStatus('Enter a SQL query first.', 'warning'); return; }
+  loading('query');
+  try {
+    const d = await apiPost('/api/parquet/query', {sql});
+    clearStatus();
+    resultsEl.innerHTML = card(
+      `SQL Result (${d.count} row${d.count !== 1 ? 's' : ''})`,
+      'terminal',
+      table(d.columns, d.rows)
+    );
+  } catch(e) {
+    clearStatus();
+    resultsEl.innerHTML = card('Error', 'exclamation-triangle',
+      `<p class="text-danger p-3 mb-0">${esc(e.message)}</p>`);
+  }
 }
 
 // ---- Inspect Folder --------------------------------------------------------
@@ -128,8 +205,7 @@ async function doInspect() {
 
     if (d.subfolders.length) {
       html += `<div class="p-3 border-bottom"><strong>Subfolders (${d.subfolders.length}):</strong></div>`;
-      html += table(['Folder','Size','Files'],
-        d.subfolders.map(s => [s.name, s.size, s.files]));
+      html += table(['Folder','Size','Files'], d.subfolders.map(s => [s.name, s.size, s.files]));
     }
     if (d.files.length) {
       html += `<div class="p-3 border-bottom"><strong>Parquet files in root (${d.files.length}):</strong></div>`;
@@ -155,7 +231,6 @@ async function doExpirations() {
     const d = await apiFetch(`/api/parquet/expirations?date=${date()}`);
     clearStatus();
 
-    // Populate dropdown
     const sel = document.getElementById('sel-exp');
     sel.innerHTML = '<option value="">(all expirations)</option>';
     d.expirations.forEach(e => {
@@ -234,7 +309,7 @@ async function doPreview() {
   if (!requireDate()) return;
   loading('preview');
   try {
-    const params = new URLSearchParams({date: date(), limit: 50});
+    const params = new URLSearchParams({date: date(), limit: 10});
     if (exp()) params.set('expiration', exp());
     const d = await apiFetch(`/api/parquet/preview?${params}`);
     clearStatus();
