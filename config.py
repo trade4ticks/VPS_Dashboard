@@ -49,7 +49,7 @@ LOG_FILES = {
     },
     "spx_pipeline": {
         "name": "SPX Pipeline (Cron)",
-        "path": "/spx_pipeline/logs/pipeline.log",
+        "path": "/Thetadata_Raw_SPX/logs/pipeline.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Runs the SPX intraday pipeline every 5 minutes with a 1-minute delay, orchestrating fetch, clean, and interpolate steps.",
     },
