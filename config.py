@@ -47,6 +47,12 @@ LOG_FILES = {
         "schedule": "*/5 * * * 1-5",
         "description": "Fetches filled transactions from brokers. Weekdays, every 5 min.",
     },
+    "fetch_intraday": {
+        "name": "SPX Intraday Fetch (cron)",
+        "path": "/Thetadata_Raw_SPX/logs/fetch_intraday.log",
+        "schedule": "1-59/5 * * * 1-5",
+        "description": "Fetches SPX intraday option chain data every 5 minutes with a 1-minute delay to ensure data availability.",
+    },
 }
 
 # Non-project directories shown in the File Browser (no git/deploy buttons).
