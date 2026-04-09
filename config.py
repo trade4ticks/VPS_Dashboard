@@ -47,11 +47,29 @@ LOG_FILES = {
         "schedule": "*/5 * * * 1-5",
         "description": "Fetches filled transactions from brokers. Weekdays, every 5 min.",
     },
+    "spx_pipeline": {
+        "name": "SPX Pipeline (Cron)",
+        "path": "/spx_pipeline/logs/pipeline.log",
+        "schedule": "1-59/5 * * * 1-5",
+        "description": "Runs the SPX intraday pipeline every 5 minutes with a 1-minute delay, orchestrating fetch, clean, and interpolate steps.",
+    },
     "fetch_intraday": {
         "name": "SPX Intraday Fetch (cron)",
         "path": "/Thetadata_Raw_SPX/logs/fetch_intraday.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Fetches SPX intraday option chain data every 5 minutes with a 1-minute delay to ensure data availability.",
+    },
+    "clean_intraday": {
+        "name": "SPX Intraday Clean",
+        "path": "/clean_SPX/logs/process_intraday.log",
+        "schedule": "1-59/5 * * * 1-5",
+        "description": "Triggered by the SPX pipeline to clean and enrich newly fetched intraday SPX option chain data.",
+    },
+    "interpolate_intraday": {
+        "name": "SPX Intraday Interpolate",
+        "path": "/interpolate_SPX/logs/process_intraday.log",
+        "schedule": "1-59/5 * * * 1-5",
+        "description": "Triggered by the SPX pipeline to interpolate and smooth cleaned intraday SPX option chain data into the surface database.",
     },
 }
 
