@@ -163,6 +163,30 @@ function clearSql() {
   document.getElementById('sql-input').focus();
 }
 
+// ---- CSV Export ------------------------------------------------------------
+let lastQueryResult = null;
+
+function csvEscape(val) {
+  const s = val == null ? '' : String(val);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function exportCsv() {
+  if (!lastQueryResult) return;
+  const {columns, rows} = lastQueryResult;
+  const lines = [columns.map(csvEscape).join(',')];
+  for (const r of rows) lines.push(r.map(csvEscape).join(','));
+  const blob = new Blob([lines.join('\n')], {type: 'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'query_result.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // ---- SQL Query -------------------------------------------------------------
 async function doSqlQuery() {
   const sql = document.getElementById('sql-input').value.trim();
@@ -170,13 +194,18 @@ async function doSqlQuery() {
   loading('query');
   try {
     const d = await apiPost('/api/parquet/query', {sql});
+    lastQueryResult = d;
     clearStatus();
+    const exportBtn = d.rows.length
+      ? ` <button class="btn btn-sm btn-outline-success ms-2" onclick="exportCsv()"><i class="bi bi-download"></i> CSV</button>`
+      : '';
     resultsEl.innerHTML = card(
-      `SQL Result (${d.count} row${d.count !== 1 ? 's' : ''})`,
+      `SQL Result (${d.count} row${d.count !== 1 ? 's' : ''})${exportBtn}`,
       'terminal',
       table(d.columns, d.rows)
     );
   } catch(e) {
+    lastQueryResult = null;
     clearStatus();
     resultsEl.innerHTML = card('Error', 'exclamation-triangle',
       `<p class="text-danger p-3 mb-0">${esc(e.message)}</p>`);
