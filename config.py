@@ -51,7 +51,7 @@ LOG_FILES = {
         "name": "SPX Pipeline (Cron)",
         "path": "/Thetadata_Raw_SPX/logs/pipeline.log",
         "schedule": "1-59/5 * * * 1-5",
-        "description": "Runs the SPX intraday pipeline every 5 minutes with a 1-minute delay, orchestrating fetch, clean, and interpolate steps.",
+        "description": "Runs the SPX intraday pipeline every 5 minutes with a 1-minute delay, orchestrating fetch, clean, interpolate, and surface snapshot steps.",
     },
     "fetch_intraday": {
         "name": "SPX Intraday Fetch (cron)",
@@ -70,6 +70,12 @@ LOG_FILES = {
         "path": "/interpolate_SPX/logs/process_intraday.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Triggered by the SPX pipeline to interpolate and smooth cleaned intraday SPX option chain data into the surface database.",
+    },
+    "surface_snapshot_intraday": {
+        "name": "SPX Surface Snapshot (cron)",
+        "path": "/spx_surface_snapshot/logs/process_intraday.log",
+        "schedule": "1-59/5 * * * 1-5",
+        "description": "Processes first pass surface snapshot data.",
     },
 }
 
