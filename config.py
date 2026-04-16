@@ -51,7 +51,7 @@ LOG_FILES = {
         "name": "SPX Pipeline (Cron)",
         "path": "/Thetadata_Raw_SPX/logs/pipeline.log",
         "schedule": "1-59/5 * * * 1-5",
-        "description": "Runs the SPX intraday pipeline every 5 minutes with a 1-minute delay, orchestrating fetch, clean, interpolate, and surface snapshot steps.",
+        "description": "Runs the SPX intraday pipeline every 5 minutes with a 1-minute delay, orchestrating fetch, clean, interpolate, surface snapshot, and index OHLC steps.",
     },
     "fetch_intraday": {
         "name": "SPX Intraday Fetch (cron)",
@@ -76,6 +76,12 @@ LOG_FILES = {
         "path": "/spx_surface_snapshot/logs/process_intraday.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Processes first pass surface snapshot data.",
+    },
+    "update_index_ohlc": {
+        "name": "Index OHLC (cron)",
+        "path": "/Thetadata_Raw_SPX/Logs/update_index_ohlc.log",
+        "schedule": "1-59/5 * * * 1-5",
+        "description": "Fetches SPX, VIX, VIX3M & VIX9D intraday 5min OHLC from yfinance.",
     },
 }
 
