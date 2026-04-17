@@ -8,12 +8,9 @@
     </button>
 </div>
 
-<!-- Overall disk -->
-<div class="section-header">Root Filesystem</div>
-<div class="card mb-4">
-    <div class="card-body">
-        <pre id="df-output" class="mb-0" style="font-size:0.8rem;font-family:monospace;color:#334155">Loading…</pre>
-    </div>
+<!-- Volume usage cards -->
+<div id="volume-cards">
+    <div class="text-muted">Loading…</div>
 </div>
 
 <!-- Per-path breakdown -->
@@ -25,14 +22,57 @@
 {% block scripts %}
 <script>
 async function loadDisk() {
-    document.getElementById('df-output').textContent = 'Loading…';
+    document.getElementById('volume-cards').innerHTML = '<div class="text-muted">Loading…</div>';
     document.getElementById('path-sections').innerHTML = '<div class="text-muted">Loading…</div>';
 
     try {
         const res  = await fetch('/api/disk');
         const data = await res.json();
 
-        document.getElementById('df-output').textContent = data.df || '(unavailable)';
+        // Render volume usage cards
+        const volContainer = document.getElementById('volume-cards');
+        if (data.volumes && data.volumes.length) {
+            let volHtml = '<div class="row g-3 mb-4">';
+            for (const v of data.volumes) {
+                if (!v.available) {
+                    volHtml += `
+                    <div class="col-md-6">
+                        <div class="section-header">${v.label}</div>
+                        <div class="card"><div class="card-body text-muted">Unavailable: <code>${v.mount}</code></div></div>
+                    </div>`;
+                    continue;
+                }
+                const pct = parseInt(v.use_pct) || 0;
+                const barColor = pct >= 90 ? '#dc3545' : pct >= 70 ? '#fd7e14' : '#198754';
+                volHtml += `
+                <div class="col-md-6">
+                    <div class="section-header">${v.label}</div>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between mb-1" style="font-size:0.82rem">
+                                <span><code>${v.device}</code> → <code>${v.mount}</code></span>
+                                <span class="fw-semibold">${v.use_pct} used</span>
+                            </div>
+                            <div class="progress mb-2" style="height:20px">
+                                <div class="progress-bar" role="progressbar"
+                                     style="width:${pct}%;background-color:${barColor}"
+                                     aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between text-muted" style="font-size:0.78rem">
+                                <span>Used: ${v.used}</span>
+                                <span>Available: ${v.avail}</span>
+                                <span>Total: ${v.size}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            }
+            volHtml += '</div>';
+            volContainer.innerHTML = volHtml;
+        } else {
+            volContainer.innerHTML = '<div class="text-muted">No volumes configured.</div>';
+        }
 
         const container = document.getElementById('path-sections');
         if (!data.sections || data.sections.length === 0) {

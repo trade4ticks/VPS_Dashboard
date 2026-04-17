@@ -1,12 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
 <h1 class="page-title"><i class="bi bi-database-check"></i> Parquet Inspector</h1>
-<p class="text-muted mb-4">Read-only Parquet inspection for <code>/data/spx_options</code></p>
+<p class="text-muted mb-4">Read-only Parquet inspection across configured data sources</p>
 
 <!-- Controls -->
 <div class="card mb-3">
   <div class="card-body">
     <div class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label fw-semibold">Data Source</label>
+        <select id="sel-source" class="form-select" style="width:200px"
+                onchange="onSourceChange()">
+          {% for key, src in parquet_sources.items() %}
+          <option value="{{ key }}">{{ src.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="col-auto">
         <label class="form-label fw-semibold">Trade Date</label>
         <input type="text" id="inp-date" class="form-control font-monospace"
@@ -47,8 +56,9 @@
   <div class="card-header fw-semibold"><i class="bi bi-terminal"></i> SQL Query</div>
   <div class="card-body">
     <p class="text-muted small mb-2">
-      SELECT-only. Use <code>read_parquet('/data/spx_options/...')</code> or a glob like
+      SELECT-only. Use <code>read_parquet('/path/to/data/...')</code> or a glob like
       <code>read_parquet('/data/spx_options/**/*.parquet')</code>. Results capped at 200 rows.
+      Available paths: {% for src in parquet_sources.values() %}<code>{{ src.path }}</code>{{ ", " if not loop.last else "" }}{% endfor %}
     </p>
     <textarea id="sql-input" class="form-control font-monospace mb-2"
               rows="5" spellcheck="false">SELECT * FROM read_parquet('/data/spx_options/20250722/**/*.parquet') LIMIT 20</textarea>
@@ -75,8 +85,16 @@
 const resultsEl = document.getElementById('results');
 const statusEl  = document.getElementById('status-bar');
 
-function date()  { return document.getElementById('inp-date').value.trim(); }
-function exp()   { return document.getElementById('sel-exp').value; }
+function date()   { return document.getElementById('inp-date').value.trim(); }
+function exp()    { return document.getElementById('sel-exp').value; }
+function source() { return document.getElementById('sel-source').value; }
+
+function onSourceChange() {
+  // Reset expiration dropdown and re-load if date is valid
+  const sel = document.getElementById('sel-exp');
+  sel.innerHTML = '<option value="">(all expirations)</option>';
+  if (/^\d{8}$/.test(date())) loadExpirations(date());
+}
 
 function setStatus(msg, variant='info') {
   statusEl.className = `alert alert-${variant}`;
@@ -217,7 +235,7 @@ async function doInspect() {
   if (!requireDate()) return;
   loading('folder info');
   try {
-    const d = await apiFetch(`/api/parquet/inspect?date=${date()}`);
+    const d = await apiFetch(`/api/parquet/inspect?date=${date()}&source=${source()}`);
     clearStatus();
     if (!d.exists) {
       resultsEl.innerHTML = card('Folder Info', 'folder2-open',
@@ -256,7 +274,7 @@ async function doExpirations() {
   if (!requireDate()) return;
   loading('expirations');
   try {
-    const d = await apiFetch(`/api/parquet/expirations?date=${date()}`);
+    const d = await apiFetch(`/api/parquet/expirations?date=${date()}&source=${source()}`);
     clearStatus();
 
     const sel = document.getElementById('sel-exp');
@@ -287,7 +305,7 @@ async function doRowCounts() {
   if (!requireDate()) return;
   loading('row counts');
   try {
-    const params = new URLSearchParams({date: date()});
+    const params = new URLSearchParams({date: date(), source: source()});
     if (exp()) params.set('expiration', exp());
     const d = await apiFetch(`/api/parquet/row-counts?${params}`);
     clearStatus();
@@ -314,7 +332,7 @@ async function doSchema() {
   if (!requireDate()) return;
   loading('schema');
   try {
-    const params = new URLSearchParams({date: date()});
+    const params = new URLSearchParams({date: date(), source: source()});
     if (exp()) params.set('expiration', exp());
     const d = await apiFetch(`/api/parquet/schema?${params}`);
     clearStatus();
@@ -337,7 +355,7 @@ async function doPreview() {
   if (!requireDate()) return;
   loading('preview');
   try {
-    const params = new URLSearchParams({date: date(), limit: 10});
+    const params = new URLSearchParams({date: date(), limit: 10, source: source()});
     if (exp()) params.set('expiration', exp());
     const d = await apiFetch(`/api/parquet/preview?${params}`);
     clearStatus();
@@ -361,7 +379,7 @@ document.getElementById('inp-date').addEventListener('input', function() {
 
 async function loadExpirations(d) {
   try {
-    const data = await apiFetch(`/api/parquet/expirations?date=${d}`);
+    const data = await apiFetch(`/api/parquet/expirations?date=${d}&source=${source()}`);
     const sel = document.getElementById('sel-exp');
     sel.innerHTML = '<option value="">(all expirations)</option>';
     data.expirations.forEach(e => {

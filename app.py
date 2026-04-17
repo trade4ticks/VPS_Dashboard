@@ -110,7 +110,10 @@ def cheatsheet(request: Request):
 
 @app.get("/data-inspector")
 def data_inspector(request: Request):
-    return templates.TemplateResponse(request, "data_inspector.html", {"active": "data_inspector"})
+    return templates.TemplateResponse(request, "data_inspector.html", {
+        "active": "data_inspector",
+        "parquet_sources": config.PARQUET_SOURCES,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -337,8 +340,33 @@ def api_disk():
             "total_files": total_files,
         })
 
-    df = subprocess.run(["df", "-h", "/"], capture_output=True, text=True)
-    return {"sections": sections, "df": df.stdout}
+    # Collect df info for each configured volume
+    volumes = []
+    for label, mount in config.DISK_VOLUMES.items():
+        result = subprocess.run(
+            ["df", "-h", mount], capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            volumes.append({"label": label, "mount": mount, "available": False})
+            continue
+        # Parse second line: device  size  used  avail  use%  mount
+        lines = result.stdout.strip().splitlines()
+        if len(lines) >= 2:
+            parts = lines[1].split()
+            volumes.append({
+                "label": label,
+                "mount": mount,
+                "available": True,
+                "device": parts[0] if len(parts) > 0 else "",
+                "size": parts[1] if len(parts) > 1 else "",
+                "used": parts[2] if len(parts) > 2 else "",
+                "avail": parts[3] if len(parts) > 3 else "",
+                "use_pct": parts[4] if len(parts) > 4 else "",
+            })
+        else:
+            volumes.append({"label": label, "mount": mount, "available": False})
+
+    return {"sections": sections, "volumes": volumes}
 
 
 # ---------------------------------------------------------------------------
@@ -359,9 +387,20 @@ def api_crontab():
 # API — Parquet / Data Inspector
 # ---------------------------------------------------------------------------
 
-PARQUET_BASE = "/data/spx_options"
 _DATE_RE = re.compile(r"^\d{8}$")
 _SAFE_NAME_RE = re.compile(r"^[\w\-\.]+$")
+
+# Default source key (first entry in PARQUET_SOURCES)
+_DEFAULT_SOURCE = next(iter(config.PARQUET_SOURCES))
+
+
+def _resolve_base(source: str | None) -> str:
+    """Return the base path for the given source key."""
+    key = source or _DEFAULT_SOURCE
+    entry = config.PARQUET_SOURCES.get(key)
+    if not entry:
+        raise HTTPException(status_code=400, detail=f"Unknown parquet source: {key}")
+    return entry["path"]
 
 
 def _require_date(date: str) -> None:
@@ -369,10 +408,11 @@ def _require_date(date: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid date — use YYYYMMDD (e.g. 20250722)")
 
 
-def _date_path(date: str) -> Path:
-    """Return Path for the date folder and verify it stays within PARQUET_BASE."""
-    candidate = (Path(PARQUET_BASE) / date).resolve()
-    base = Path(PARQUET_BASE).resolve()
+def _date_path(date: str, source: str | None = None) -> Path:
+    """Return Path for the date folder and verify it stays within the source base."""
+    base_str = _resolve_base(source)
+    candidate = (Path(base_str) / date).resolve()
+    base = Path(base_str).resolve()
     try:
         candidate.relative_to(base)
     except ValueError:
@@ -380,16 +420,17 @@ def _date_path(date: str) -> Path:
     return candidate
 
 
-def _parquet_glob(date: str, expiration: str | None) -> str:
+def _parquet_glob(date: str, expiration: str | None, source: str | None = None) -> str:
+    base = _resolve_base(source)
     if expiration:
-        return f"{PARQUET_BASE}/{date}/{expiration}/*.parquet"
-    return f"{PARQUET_BASE}/{date}/**/*.parquet"
+        return f"{base}/{date}/{expiration}/*.parquet"
+    return f"{base}/{date}/**/*.parquet"
 
 
 @app.get("/api/parquet/inspect")
-def api_parquet_inspect(date: str):
+def api_parquet_inspect(date: str, source: str = None):
     _require_date(date)
-    folder = _date_path(date)
+    folder = _date_path(date, source)
 
     if not folder.exists():
         return {"exists": False, "date": date, "path": str(folder)}
@@ -425,9 +466,9 @@ def api_parquet_inspect(date: str):
 
 
 @app.get("/api/parquet/expirations")
-def api_parquet_expirations(date: str):
+def api_parquet_expirations(date: str, source: str = None):
     _require_date(date)
-    folder = _date_path(date)
+    folder = _date_path(date, source)
 
     if not folder.exists():
         raise HTTPException(status_code=404, detail=f"Date folder not found: {folder}")
@@ -437,14 +478,14 @@ def api_parquet_expirations(date: str):
 
 
 @app.get("/api/parquet/schema")
-def api_parquet_schema(date: str, expiration: str = None):
+def api_parquet_schema(date: str, expiration: str = None, source: str = None):
     _require_date(date)
-    _date_path(date)  # validate path
+    _date_path(date, source)  # validate path
 
     if expiration and not _SAFE_NAME_RE.match(expiration):
         raise HTTPException(status_code=400, detail="Invalid expiration value")
 
-    glob = _parquet_glob(date, expiration)
+    glob = _parquet_glob(date, expiration, source)
     try:
         con = duckdb.connect()
         rows = con.execute(
@@ -461,9 +502,9 @@ def api_parquet_schema(date: str, expiration: str = None):
 
 
 @app.get("/api/parquet/row-counts")
-def api_parquet_row_counts(date: str, expiration: str = None):
+def api_parquet_row_counts(date: str, expiration: str = None, source: str = None):
     _require_date(date)
-    folder = _date_path(date)
+    folder = _date_path(date, source)
 
     if not folder.exists():
         raise HTTPException(status_code=404, detail="Date folder not found")
@@ -476,7 +517,7 @@ def api_parquet_row_counts(date: str, expiration: str = None):
         results = []
 
         if expiration:
-            glob = _parquet_glob(date, expiration)
+            glob = _parquet_glob(date, expiration, source)
             count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{glob}')").fetchone()[0]
             results.append({"expiration": expiration, "rows": count})
         else:
@@ -484,7 +525,7 @@ def api_parquet_row_counts(date: str, expiration: str = None):
             if subfolders:
                 for exp in subfolders:
                     try:
-                        glob = _parquet_glob(date, exp)
+                        glob = _parquet_glob(date, exp, source)
                         count = con.execute(
                             f"SELECT COUNT(*) FROM read_parquet('{glob}')"
                         ).fetchone()[0]
@@ -492,7 +533,8 @@ def api_parquet_row_counts(date: str, expiration: str = None):
                     except Exception:
                         results.append({"expiration": exp, "rows": None})
             else:
-                glob = f"{PARQUET_BASE}/{date}/*.parquet"
+                base = _resolve_base(source)
+                glob = f"{base}/{date}/*.parquet"
                 count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{glob}')").fetchone()[0]
                 results.append({"expiration": "(all)", "rows": count})
 
@@ -504,15 +546,15 @@ def api_parquet_row_counts(date: str, expiration: str = None):
 
 
 @app.get("/api/parquet/preview")
-def api_parquet_preview(date: str, expiration: str = None, limit: int = 50):
+def api_parquet_preview(date: str, expiration: str = None, limit: int = 50, source: str = None):
     _require_date(date)
-    _date_path(date)  # validate path
+    _date_path(date, source)  # validate path
 
     if expiration and not _SAFE_NAME_RE.match(expiration):
         raise HTTPException(status_code=400, detail="Invalid expiration value")
 
     limit = min(max(1, limit), 200)
-    glob = _parquet_glob(date, expiration)
+    glob = _parquet_glob(date, expiration, source)
 
     try:
         con = duckdb.connect()

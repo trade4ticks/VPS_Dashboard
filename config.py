@@ -91,9 +91,32 @@ BROWSE_PATHS = {
         "name": "SPX Options Data",
         "path": "/data/spx_options",
     },
+    "spx_options_vol1": {
+        "name": "SPX Options Data (Volume 1)",
+        "path": "/mnt/volume1/spx_options",
+    },
 }
 
-# Directories tracked on the Disk page.
+# Directories tracked on the Disk page (per-path subdirectory breakdown).
 DISK_PATHS = {
     "SPX Options (Parquet)": "/data/spx_options",
+    "SPX Options — Volume 1": "/mnt/volume1/spx_options",
+}
+
+# Filesystems shown on the Disk page (df usage cards).
+DISK_VOLUMES = {
+    "Root Filesystem": "/",
+    "Block Storage": "/mnt/volume1",
+}
+
+# Parquet data sources available in the Data Inspector.
+PARQUET_SOURCES = {
+    "root_volume": {
+        "name": "Root Volume",
+        "path": "/data/spx_options",
+    },
+    "block_storage": {
+        "name": "Block Storage",
+        "path": "/mnt/volume1/spx_options",
+    },
 }
