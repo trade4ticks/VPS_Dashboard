@@ -36,7 +36,7 @@ async function loadDisk() {
             for (const v of data.volumes) {
                 if (!v.available) {
                     volHtml += `
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div class="section-header">${v.label}</div>
                         <div class="card"><div class="card-body text-muted">Unavailable: <code>${v.mount}</code></div></div>
                     </div>`;
@@ -45,7 +45,7 @@ async function loadDisk() {
                 const pct = parseInt(v.use_pct) || 0;
                 const barColor = pct >= 90 ? '#dc3545' : pct >= 70 ? '#fd7e14' : '#198754';
                 volHtml += `
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <div class="section-header">${v.label}</div>
                     <div class="card">
                         <div class="card-body">
