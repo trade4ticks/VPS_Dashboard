@@ -59,6 +59,21 @@ PROJECTS = {
         "path": "/root/VPS_Dashboard",
         "service": "vps_dashboard.service",
     },
+    "clean_spx": {
+        "name": "Clean SPX",
+        "path": "/clean_SPX",
+        "service": None,
+    },
+    "interpolate_spx": {
+        "name": "Interpolate SPX",
+        "path": "/interpolate_SPX",
+        "service": None,
+    },
+    "spx_surface_snapshot": {
+        "name": "SPX Surface Snapshot",
+        "path": "/spx_surface_snapshot",
+        "service": None,
+    },
 }
 
 # Log files shown on the Logs page.
