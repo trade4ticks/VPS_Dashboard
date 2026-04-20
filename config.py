@@ -22,6 +22,12 @@ SERVICES = {
         "host": "localhost",
         "port": 5432,
     },
+    "spx_dashboard": {
+        "name": "SPX Analysis Dashboard",
+        "service": "spx-dashboard.service",
+        "host": "localhost",
+        "port": 8000,
+    },
 }
 
 # Git projects — shown on the Services page with pull/deploy buttons.
@@ -36,6 +42,11 @@ PROJECTS = {
         "name": "Thetadata Raw SPX",
         "path": "/root/Thetadata_Raw_SPX",
         "service": None,
+    },
+    "spx_analysis_dashboard": {
+        "name": "SPX Analysis Dashboard",
+        "path": "/spx_analysis_dashboard",
+        "service": "spx-dashboard.service",
     },
 }
 
