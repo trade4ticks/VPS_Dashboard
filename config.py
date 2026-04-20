@@ -28,6 +28,12 @@ SERVICES = {
         "host": "localhost",
         "port": 8000,
     },
+    "vps_dashboard": {
+        "name": "VPS Dashboard",
+        "service": "vps_dashboard.service",
+        "host": "localhost",
+        "port": 8080,
+    },
 }
 
 # Git projects — shown on the Services page with pull/deploy buttons.
@@ -47,6 +53,11 @@ PROJECTS = {
         "name": "SPX Analysis Dashboard",
         "path": "/spx_analysis_dashboard",
         "service": "spx-dashboard.service",
+    },
+    "vps_dashboard": {
+        "name": "VPS Dashboard",
+        "path": "/root/VPS_Dashboard",
+        "service": "vps_dashboard.service",
     },
 }
 
