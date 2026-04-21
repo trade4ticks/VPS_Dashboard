@@ -34,6 +34,12 @@ SERVICES = {
         "host": "localhost",
         "port": 8080,
     },
+    "cloudflared": {
+        "name": "Cloudflare Tunnel",
+        "service": "cloudflared.service",
+        "host": "localhost",
+        "port": None,          # outbound tunnel, no local port to check
+    },
 }
 
 # Git projects — shown on the Services page with pull/deploy buttons.
