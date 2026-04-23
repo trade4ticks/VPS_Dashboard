@@ -6,12 +6,16 @@ from datetime import datetime
 from pathlib import Path
 
 import duckdb
+import psycopg2
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import config
+
+load_dotenv()
 
 app = FastAPI(title="VPS Dashboard")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -282,6 +286,12 @@ def api_logs(log_key: str, lines: int = 200):
     if log_key not in config.LOG_FILES:
         raise HTTPException(status_code=404, detail=f"Unknown log: {log_key}")
     info = config.LOG_FILES[log_key]
+
+    # --- Postgres log type ---
+    if info.get("type") == "postgres":
+        return _fetch_postgres_log(info, lines)
+
+    # --- File log type (default) ---
     path = info["path"]
 
     if not os.path.exists(path):
@@ -303,6 +313,64 @@ def api_logs(log_key: str, lines: int = 200):
         "size": format_bytes(stat.st_size),
         "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
     }
+
+
+def _fetch_postgres_log(info: dict, limit: int) -> dict:
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        return {"path": "postgres", "exists": False,
+                "content": "(DATABASE_URL not configured in .env)",
+                "size": None, "modified": None}
+
+    table = info["table"]
+    # Whitelist table name to prevent injection
+    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table):
+        return {"path": "postgres", "exists": False,
+                "content": "(Invalid table name)", "size": None, "modified": None}
+
+    try:
+        con = psycopg2.connect(db_url)
+        cur = con.cursor()
+
+        # Get column names
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = %s ORDER BY ordinal_position", (table,)
+        )
+        columns = [r[0] for r in cur.fetchall()]
+        if not columns:
+            con.close()
+            return {"path": f"postgres:{table}", "exists": False,
+                    "content": f"(Table '{table}' not found)", "size": None, "modified": None}
+
+        # Fetch recent rows (newest first)
+        cur.execute(f"SELECT * FROM {table} ORDER BY ts DESC LIMIT %s", (limit,))
+        rows = cur.fetchall()
+
+        # Get total row count
+        cur.execute(f"SELECT COUNT(*) FROM {table}")
+        total = cur.fetchone()[0]
+
+        con.close()
+
+        # Format as readable text lines
+        output_lines = []
+        col_header = " | ".join(f"{c:>20}" for c in columns)
+        output_lines.append(col_header)
+        output_lines.append("-" * len(col_header))
+        for row in rows:
+            output_lines.append(" | ".join(f"{str(v or ''):>20}" for v in row))
+
+        return {
+            "path": f"postgres:{table}",
+            "exists": True,
+            "content": "\n".join(output_lines),
+            "size": f"{total} rows total",
+            "modified": rows[0][0].strftime("%Y-%m-%d %H:%M:%S") if rows and rows[0][0] else None,
+        }
+    except Exception as exc:
+        return {"path": f"postgres:{table}", "exists": True,
+                "content": f"(Database error: {exc})", "size": None, "modified": None}
 
 
 # ---------------------------------------------------------------------------

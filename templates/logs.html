@@ -8,7 +8,7 @@
         <div class="d-flex align-items-center gap-3 flex-wrap">
             <select id="log-select" class="form-select form-select-sm" style="width:auto">
                 {% for key, info in log_files.items() %}
-                <option value="{{ key }}" data-desc="{{ info.description }}" data-schedule="{{ info.schedule }}">
+                <option value="{{ key }}" data-desc="{{ info.description }}" data-schedule="{{ info.get('schedule', '') }}">
                     {{ info.name }}
                 </option>
                 {% endfor %}
@@ -52,7 +52,9 @@ async function loadLog() {
     const desc  = document.getElementById('log-desc');
 
     const opt = document.querySelector('#log-select option:checked');
-    desc.textContent = opt ? opt.dataset.schedule + ' — ' + opt.dataset.desc : '';
+    desc.textContent = opt
+        ? (opt.dataset.schedule ? opt.dataset.schedule + ' — ' : '') + opt.dataset.desc
+        : '';
 
     box.textContent = 'Loading…';
     try {

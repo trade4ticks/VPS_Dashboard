@@ -126,6 +126,12 @@ LOG_FILES = {
         "schedule": "1-59/5 * * * 1-5",
         "description": "Fetches SPX, VIX, VIX3M & VIX9D intraday 5min OHLC from yfinance.",
     },
+    "ai_explorer": {
+        "name": "AI Explorer Log",
+        "type": "postgres",
+        "table": "ai_explorer_log",
+        "description": "Query and response log from the AI Explorer page.",
+    },
 }
 
 # Non-project directories shown in the File Browser (no git/deploy buttons).
