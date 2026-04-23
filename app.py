@@ -315,6 +315,14 @@ def api_logs(log_key: str, lines: int = 200):
     }
 
 
+def _format_ts(val) -> str:
+    if hasattr(val, 'strftime'):
+        return val.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(val, (int, float)):
+        return datetime.fromtimestamp(val).strftime("%Y-%m-%d %H:%M:%S")
+    return str(val)
+
+
 def _fetch_postgres_log(info: dict, limit: int) -> dict:
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
@@ -366,7 +374,7 @@ def _fetch_postgres_log(info: dict, limit: int) -> dict:
             "exists": True,
             "content": "\n".join(output_lines),
             "size": f"{total} rows total",
-            "modified": rows[0][0].strftime("%Y-%m-%d %H:%M:%S") if rows and rows[0][0] else None,
+            "modified": _format_ts(rows[0][0]) if rows and rows[0][0] else None,
         }
     except Exception as exc:
         return {"path": f"postgres:{table}", "exists": True,
