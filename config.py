@@ -1,3 +1,5 @@
+import os
+
 PORT = 8080
 
 # Systemd services to monitor and control.
@@ -162,6 +164,15 @@ DISK_VOLUMES = {
     "Root Filesystem": "/",
     "Block Storage 1": "/mnt/volume1",
     "Block Storage 2": "/mnt/volume2",
+}
+
+# PostgreSQL connection for Disk page DB/table size stats.
+# Set POSTGRES_PASSWORD env var in the systemd unit (Environment=POSTGRES_PASSWORD=...).
+POSTGRES_CONN = {
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": os.environ.get("POSTGRES_PASSWORD", ""),
 }
 
 # Parquet data sources available in the Data Inspector.

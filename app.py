@@ -385,6 +385,71 @@ def _fetch_postgres_log(info: dict, limit: int) -> dict:
 # API — disk
 # ---------------------------------------------------------------------------
 
+def get_postgres_sizes() -> dict:
+    """Return per-database and per-table sizes from PostgreSQL."""
+    try:
+        conn = psycopg2.connect(
+            host=config.POSTGRES_CONN["host"],
+            port=config.POSTGRES_CONN["port"],
+            user=config.POSTGRES_CONN["user"],
+            password=config.POSTGRES_CONN["password"],
+            database="postgres",
+            connect_timeout=5,
+        )
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT datname, pg_database_size(datname)
+            FROM pg_database
+            WHERE datname NOT IN ('template0', 'template1', 'postgres')
+            ORDER BY pg_database_size(datname) DESC
+        """)
+        db_rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        databases = []
+        for datname, db_size_bytes in db_rows:
+            tables = []
+            try:
+                db_conn = psycopg2.connect(
+                    host=config.POSTGRES_CONN["host"],
+                    port=config.POSTGRES_CONN["port"],
+                    user=config.POSTGRES_CONN["user"],
+                    password=config.POSTGRES_CONN["password"],
+                    database=datname,
+                    connect_timeout=5,
+                )
+                db_cur = db_conn.cursor()
+                db_cur.execute("""
+                    SELECT schemaname || '.' || tablename,
+                           pg_total_relation_size(
+                               quote_ident(schemaname) || '.' || quote_ident(tablename)
+                           )
+                    FROM pg_tables
+                    WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+                    ORDER BY 2 DESC NULLS LAST
+                """)
+                tables = [
+                    {"name": row[0], "size_bytes": row[1] or 0, "size": format_bytes(row[1] or 0)}
+                    for row in db_cur.fetchall()
+                ]
+                db_cur.close()
+                db_conn.close()
+            except Exception:
+                pass
+
+            databases.append({
+                "name": datname,
+                "size_bytes": db_size_bytes,
+                "size": format_bytes(db_size_bytes),
+                "tables": tables,
+            })
+
+        return {"available": True, "databases": databases}
+    except Exception as exc:
+        return {"available": False, "error": str(exc)}
+
+
 @app.get("/api/disk")
 def api_disk():
     sections = []
@@ -442,7 +507,7 @@ def api_disk():
         else:
             volumes.append({"label": label, "mount": mount, "available": False})
 
-    return {"sections": sections, "volumes": volumes}
+    return {"sections": sections, "volumes": volumes, "postgres": get_postgres_sizes()}
 
 
 # ---------------------------------------------------------------------------
