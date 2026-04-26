@@ -171,7 +171,7 @@ DISK_VOLUMES = {
 POSTGRES_CONN = {
     "host": "localhost",
     "port": 5432,
-    "user": "postgres",
+    "user": "portfolio",
     "password": os.environ.get("POSTGRES_PASSWORD", ""),
 }
 

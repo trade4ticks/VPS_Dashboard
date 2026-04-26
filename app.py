@@ -393,7 +393,7 @@ def get_postgres_sizes() -> dict:
             port=config.POSTGRES_CONN["port"],
             user=config.POSTGRES_CONN["user"],
             password=config.POSTGRES_CONN["password"],
-            database="postgres",
+            database=config.POSTGRES_CONN["user"],
             connect_timeout=5,
         )
         cur = conn.cursor()
