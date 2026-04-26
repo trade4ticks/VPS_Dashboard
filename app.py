@@ -13,9 +13,9 @@ from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-import config
+load_dotenv()  # must run before importing config so os.environ.get() picks up .env values
 
-load_dotenv()
+import config
 
 app = FastAPI(title="VPS Dashboard")
 app.mount("/static", StaticFiles(directory="static"), name="static")
