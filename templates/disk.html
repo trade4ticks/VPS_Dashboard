@@ -26,7 +26,27 @@
 
 {% block scripts %}
 <script>
+let collapseCounter = 0;
+
+function collapsible(headerHtml, bodyHtml) {
+    const id = `collapse-${collapseCounter++}`;
+    return `
+    <div class="card mb-4">
+        <div class="card-header d-flex align-items-center" style="cursor:pointer"
+             data-bs-toggle="collapse" data-bs-target="#${id}" aria-expanded="false">
+            <i class="bi bi-chevron-right me-2 collapse-chevron"></i>
+            <div class="d-flex justify-content-between align-items-center flex-grow-1">
+                ${headerHtml}
+            </div>
+        </div>
+        <div id="${id}" class="collapse">
+            <div class="card-body p-0">${bodyHtml}</div>
+        </div>
+    </div>`;
+}
+
 async function loadDisk() {
+    collapseCounter = 0;
     document.getElementById('volume-cards').innerHTML = '<div class="text-muted">Loading…</div>';
     document.getElementById('path-sections').innerHTML = '<div class="text-muted">Loading…</div>';
     document.getElementById('postgres-section').innerHTML = '<div class="text-muted">Loading…</div>';
@@ -87,9 +107,9 @@ async function loadDisk() {
 
         let html = '';
         for (const sec of data.sections) {
-            html += `<div class="section-header">${sec.label}</div>`;
             if (!sec.exists) {
-                html += `<div class="card mb-4"><div class="card-body text-muted">Path not found: <code>${sec.path}</code></div></div>`;
+                html += `<div class="section-header">${sec.label}</div>
+                <div class="card mb-4"><div class="card-body text-muted">Path not found: <code>${sec.path}</code></div></div>`;
                 continue;
             }
 
@@ -111,27 +131,25 @@ async function loadDisk() {
                 </tr>`;
             }
 
-            html += `
-            <div class="card mb-4">
-                <div class="card-header">
-                    <span><code style="font-size:0.78rem">${sec.path}</code></span>
-                    <span class="text-muted" style="font-size:0.78rem">${sec.total_size} &nbsp;·&nbsp; ${sec.total_files} files</span>
-                </div>
-                <div class="card-body p-0">
-                    ${rows.length ? `
-                    <table class="table table-sm mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Folder</th>
-                                <th>Size</th>
-                                <th class="text-end">Total</th>
-                                <th class="text-end">Files</th>
-                            </tr>
-                        </thead>
-                        <tbody>${rows}</tbody>
-                    </table>` : '<div class="px-3 py-3 text-muted">Directory is empty.</div>'}
-                </div>
-            </div>`;
+            const headerHtml = `
+                <span><code style="font-size:0.78rem">${sec.path}</code></span>
+                <span class="text-muted" style="font-size:0.78rem">${sec.total_size} &nbsp;·&nbsp; ${sec.total_files} files</span>`;
+
+            const bodyHtml = rows.length ? `
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Folder</th>
+                            <th>Size</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-end">Files</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>` : '<div class="px-3 py-3 text-muted">Directory is empty.</div>';
+
+            html += `<div class="section-header">${sec.label}</div>`;
+            html += collapsible(headerHtml, bodyHtml);
         }
         container.innerHTML = html;
 
@@ -166,26 +184,24 @@ async function loadDisk() {
                         <td class="text-end" style="font-size:0.82rem;white-space:nowrap">${tbl.size}</td>
                     </tr>`;
                 }
-                pgHtml += `
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <span style="font-weight:600">${db.name}</span>
-                        <span class="text-muted" style="font-size:0.78rem">&nbsp;·&nbsp; ${db.size} total</span>
-                    </div>
-                    <div class="card-body p-0">
-                        ${tableRows ? `
-                        <table class="table table-sm mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Table</th>
-                                    <th>Size</th>
-                                    <th class="text-end">Total (incl. indexes)</th>
-                                </tr>
-                            </thead>
-                            <tbody>${tableRows}</tbody>
-                        </table>` : '<div class="px-3 py-3 text-muted">No tables found.</div>'}
-                    </div>
-                </div>`;
+
+                const headerHtml = `
+                    <span style="font-weight:600">${db.name}</span>
+                    <span class="text-muted" style="font-size:0.78rem">&nbsp;·&nbsp; ${db.size} total</span>`;
+
+                const bodyHtml = tableRows ? `
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Table</th>
+                                <th>Size</th>
+                                <th class="text-end">Total (incl. indexes)</th>
+                            </tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>` : '<div class="px-3 py-3 text-muted">No tables found.</div>';
+
+                pgHtml += collapsible(headerHtml, bodyHtml);
             }
             pgContainer.innerHTML = pgHtml;
         }
@@ -197,4 +213,14 @@ async function loadDisk() {
 
 loadDisk();
 </script>
+
+<style>
+.collapse-chevron {
+    transition: transform 0.2s;
+    font-size: 0.75rem;
+}
+[aria-expanded="true"] .collapse-chevron {
+    transform: rotate(90deg);
+}
+</style>
 {% endblock %}

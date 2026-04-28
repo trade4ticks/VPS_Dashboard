@@ -155,6 +155,7 @@ BROWSE_PATHS = {
 # Directories tracked on the Disk page (per-path subdirectory breakdown).
 DISK_PATHS = {
     "SPX Options (Parquet)": "/data/spx_options",
+    "OI Raw (Parquet)": "/data/oi_raw",
     "SPX Options — Volume 1": "/mnt/volume1/spx_options",
     "SPX Options — Volume 2": "/mnt/volume2/spx_options",
 }
