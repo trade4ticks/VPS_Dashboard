@@ -87,13 +87,13 @@ PROJECTS = {
 # Log files shown on the Logs page.
 LOG_FILES = {
     "fetch_trades": {
-        "name": "Fetch Trades (Cron)",
+        "name": "Fetch Trades (cron)",
         "path": "/root/Portfolio_Dashboard/logs/fetch_trades.log",
         "schedule": "*/5 * * * 1-5",
         "description": "Fetches filled transactions from brokers. Weekdays, every 5 min.",
     },
     "spx_pipeline": {
-        "name": "SPX Pipeline (Cron)",
+        "name": "SPX Pipeline (cron)",
         "path": "/Thetadata_Raw_SPX/logs/pipeline.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Runs the SPX intraday pipeline every 5 minutes with a 1-minute delay, orchestrating fetch, clean, interpolate, surface snapshot, and index OHLC steps.",
@@ -105,13 +105,13 @@ LOG_FILES = {
         "description": "Fetches SPX intraday option chain data every 5 minutes with a 1-minute delay to ensure data availability.",
     },
     "clean_intraday": {
-        "name": "SPX Intraday Clean",
+        "name": "SPX Intraday Clean (cron)",
         "path": "/clean_SPX/logs/process_intraday.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Triggered by the SPX pipeline to clean and enrich newly fetched intraday SPX option chain data.",
     },
     "interpolate_intraday": {
-        "name": "SPX Intraday Interpolate",
+        "name": "SPX Intraday Interpolate (cron)",
         "path": "/interpolate_SPX/logs/process_intraday.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Triggered by the SPX pipeline to interpolate and smooth cleaned intraday SPX option chain data into the surface database.",
@@ -121,6 +121,12 @@ LOG_FILES = {
         "path": "/spx_surface_snapshot/logs/process_intraday.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Processes first pass surface snapshot data.",
+    },
+    "surface_snapshot_followup_intraday": {
+        "name": "SPX Surface Snapshot Followup (cron)",
+        "path": "/spx_surface_snapshot/logs/process_intraday_followup.log",
+        "schedule": "1-59/5 * * * 1-5",
+        "description": "Processes followup pass surface snapshot data.",
     },
     "update_index_ohlc": {
         "name": "Index OHLC (cron)",
