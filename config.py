@@ -134,6 +134,12 @@ LOG_FILES = {
         "schedule": "1-59/5 * * * 1-5",
         "description": "Fetches SPX, VIX, VIX3M & VIX9D intraday 5min OHLC from yfinance.",
     },
+    "oi_pipeline": {
+        "name": "OI Pipeline (cron)",
+        "path": "/Open_Interest/logs/pipeline.log",
+        "schedule": "0 7 * * *",
+        "description": "Runs the Open Interest data pipeline.",
+    },
     "ai_explorer": {
         "name": "AI Explorer Log",
         "type": "postgres",
