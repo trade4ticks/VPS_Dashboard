@@ -96,6 +96,16 @@ LOG_FILES = {
             "lock": "/tmp/fetch_trades.lock",
             "command": "flock -n /tmp/fetch_trades.lock /root/Portfolio_Dashboard/.venv/bin/python /root/Portfolio_Dashboard/scripts/fetch_trades.py >> /root/Portfolio_Dashboard/logs/fetch_trades.log 2>&1",
         }],
+        # Cron status detection (shown on Overview). Tracks Schwab only;
+        # the Tasty 403s are expected (access disabled) and ignored.
+        "status": {
+            "lines": 60,
+            "label": "Schwab",
+            "ts_regex": r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
+            "ts_format": "%Y-%m-%d %H:%M:%S",
+            "success_regex": r"\[Schwab\] DB write:",
+            "failure_regex": r"ERROR\s+\[Schwab\]",
+        },
     },
     "spx_pipeline": {
         "name": "SPX Pipeline (cron)",
@@ -107,6 +117,15 @@ LOG_FILES = {
             "lock": "/tmp/spx_pipeline.lock",
             "command": "flock -n /tmp/spx_pipeline.lock /Thetadata_Raw_SPX/.venv/bin/python /Thetadata_Raw_SPX/run_pipeline.py >> /Thetadata_Raw_SPX/logs/pipeline.log 2>&1",
         }],
+        # Each cycle ends with "Pipeline complete"; most recent marker wins.
+        "status": {
+            "lines": 80,
+            "label": "Run",
+            "ts_regex": r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]",
+            "ts_format": "%Y-%m-%d %H:%M:%S",
+            "success_regex": r"Pipeline complete",
+            "failure_regex": r"Traceback|ERROR|aborting|FAILED",
+        },
     },
     "fetch_intraday": {
         "name": "SPX Intraday Fetch (cron)",
@@ -154,6 +173,26 @@ LOG_FILES = {
             {"label": "PREMARKET", "lock": "/tmp/oi_research.lock", "command": "flock -n /tmp/oi_research.lock /Open_Interest/.venv/bin/python /Open_Interest/run_pipeline_early.py >> /Open_Interest/logs/pipeline.log 2>&1"},
             {"label": "MORNING",   "lock": "/tmp/oi_research.lock", "command": "flock -n /tmp/oi_research.lock /Open_Interest/.venv/bin/python /Open_Interest/run_pipeline.py --tier MORNING >> /Open_Interest/logs/pipeline.log 2>&1"},
         ],
+        # Per-tier status. Each run logs its tier + date in the start line
+        # (e.g. "Pipeline starting (today = 2026-06-16, tier = MORNING)").
+        # Log times are ET (cron sets TZ=America/New_York).
+        "status": {
+            "tiered": True,
+            "lines": 600,
+            "time_note": "ET",
+            "tiers": ["PREMARKET", "MORNING", "EVENING"],
+            # Each run is preceded by a line of '=' separators; that's the
+            # true run boundary (the tier/date line follows it).
+            "start_regex": r"={6,}",
+            "premarket_regex": r"Early pipeline starting",
+            "tier_regex": r"tier = (\w+)",
+            "date_in_start_regex": r"today = (\d{4}-\d{2}-\d{2})",
+            "time_regex": r"^(\d{2}:\d{2}:\d{2})",
+            "time_format": "%H:%M:%S",
+            "success_regex": r"Pipeline complete",
+            "failure_regex": r"aborting|Traceback|FAILED",
+            "warn_regex": r"bin_build_rc = [1-9]",
+        },
     },
     "ai_explorer": {
         "name": "AI Explorer Log",

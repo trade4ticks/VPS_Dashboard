@@ -14,6 +14,20 @@
 <div class="row mt-2">
     <div class="col-12">
         <div class="card">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <span>Cron Jobs &mdash; Last Run</span>
+                <a href="/logs" class="text-muted" style="font-size:0.78rem">View logs &rarr;</a>
+            </div>
+            <div class="card-body" id="cron-grid">
+                <div class="text-muted">Loading cron status&hellip;</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-2">
+    <div class="col-12">
+        <div class="card">
             <div class="card-header">Quick Links</div>
             <div class="card-body d-flex gap-2 flex-wrap">
                 <a href="/services" class="btn btn-outline-secondary btn-sm">
@@ -66,7 +80,64 @@ async function loadStatus() {
     }
 }
 
+const CRON_BADGE = {
+    success: ['bg-success', 'success'],
+    failed:  ['bg-danger', 'failed'],
+    warning: ['bg-warning text-dark', 'warning'],
+    running: ['bg-info text-dark', 'running'],
+    unknown: ['bg-secondary', 'unknown'],
+};
+
+function cronBadge(status) {
+    const [cls, label] = CRON_BADGE[status] || CRON_BADGE.unknown;
+    return `<span class="badge ${cls}">${label}</span>`;
+}
+
+async function loadCronStatus() {
+    const grid = document.getElementById('cron-grid');
+    try {
+        const res = await fetch('/api/cron-status');
+        const data = await res.json();
+        let html = '<div class="row">';
+        for (const [key, job] of Object.entries(data)) {
+            let runsHtml;
+            if (!job.exists) {
+                runsHtml = '<div class="text-muted" style="font-size:0.8rem">log not found</div>';
+            } else if (!job.runs.length) {
+                runsHtml = '<div class="text-muted" style="font-size:0.8rem">no run detected</div>';
+            } else {
+                const note = job.time_note ? ' ' + job.time_note : '';
+                runsHtml = job.runs.map(r => `
+                    <div class="d-flex align-items-center justify-content-between py-1" style="font-size:0.82rem">
+                        <span>${cronBadge(r.status)} <span class="ms-1">${r.label}</span></span>
+                        <span class="text-muted">${r.when ? r.when + note : '&mdash;'}</span>
+                    </div>`).join('');
+            }
+            const ago = job.exists && job.ago
+                ? `<span class="text-muted" style="font-size:0.72rem">updated ${job.ago}</span>` : '';
+            html += `
+            <div class="col-md-4 col-sm-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-baseline justify-content-between mb-2">
+                            <span style="font-weight:600;font-size:0.88rem">${job.name}</span>
+                            ${ago}
+                        </div>
+                        ${runsHtml}
+                    </div>
+                </div>
+            </div>`;
+        }
+        html += '</div>';
+        grid.innerHTML = html;
+    } catch (err) {
+        grid.innerHTML = `<div class="text-danger">Failed to load cron status: ${err.message}</div>`;
+    }
+}
+
 loadStatus();
+loadCronStatus();
 setInterval(loadStatus, 30000);
+setInterval(loadCronStatus, 30000);
 </script>
 {% endblock %}

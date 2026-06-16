@@ -67,6 +67,150 @@ def format_bytes(size: int) -> str:
     return f"{size:.1f} PB"
 
 
+def relative_age(dt: datetime) -> str:
+    """Human 'X ago' string from a datetime in server-local time."""
+    if not dt:
+        return None
+    secs = int((datetime.now() - dt).total_seconds())
+    if secs < 0:
+        secs = 0
+    if secs < 90:
+        return f"{secs}s ago"
+    mins = secs // 60
+    if mins < 90:
+        return f"{mins} min ago"
+    hrs = mins // 60
+    if hrs < 36:
+        return f"{hrs}h ago"
+    return f"{hrs // 24}d ago"
+
+
+def _read_tail(path: str, lines: int):
+    """Return the last `lines` of a file as a list, or None if unreadable."""
+    result = run_command(["tail", "-n", str(lines), path], timeout=10)
+    if not result["success"]:
+        return None
+    return result["output"].splitlines()
+
+
+def _simple_cron_status(lines: list, st: dict) -> dict:
+    """Most-recent-marker-wins status for single-run jobs (fetch_trades, spx)."""
+    ts_re = re.compile(st["ts_regex"])
+    succ_re = re.compile(st["success_regex"])
+    fail_re = re.compile(st["failure_regex"]) if st.get("failure_regex") else None
+    fmt = st["ts_format"]
+
+    def _ts(line):
+        m = ts_re.search(line)
+        if not m:
+            return None
+        try:
+            return m.group(1), datetime.strptime(m.group(1), fmt)
+        except ValueError:
+            return m.group(1), None
+
+    last_succ = last_fail = None  # (raw, dt)
+    for line in lines:
+        if succ_re.search(line):
+            last_succ = _ts(line) or last_succ
+        if fail_re and fail_re.search(line):
+            last_fail = _ts(line) or last_fail
+
+    def _dt(pair):
+        return pair[1] if pair and pair[1] else datetime.min
+
+    if last_succ and last_fail:
+        win, status = (last_succ, "success") if _dt(last_succ) >= _dt(last_fail) else (last_fail, "failed")
+    elif last_succ:
+        win, status = last_succ, "success"
+    elif last_fail:
+        win, status = last_fail, "failed"
+    else:
+        win, status = None, "unknown"
+
+    return {"label": st.get("label", "Run"), "status": status, "when": win[0] if win else None}
+
+
+def _tiered_cron_status(lines: list, st: dict) -> list:
+    """Per-tier status for the OI pipeline (multiple tiers share one log)."""
+    start_re = re.compile(st["start_regex"])
+    succ_re = re.compile(st["success_regex"])
+    fail_re = re.compile(st["failure_regex"]) if st.get("failure_regex") else None
+    warn_re = re.compile(st["warn_regex"]) if st.get("warn_regex") else None
+    tier_re = re.compile(st["tier_regex"]) if st.get("tier_regex") else None
+    pre_re = re.compile(st["premarket_regex"]) if st.get("premarket_regex") else None
+    date_re = re.compile(st["date_in_start_regex"]) if st.get("date_in_start_regex") else None
+    time_re = re.compile(st["time_regex"])
+
+    # Split the tail into run blocks, each beginning at a start line.
+    blocks, cur = [], None
+    for line in lines:
+        if start_re.search(line):
+            if cur:
+                blocks.append(cur)
+            cur = {"start": line, "lines": [line]}
+        elif cur:
+            cur["lines"].append(line)
+    if cur:
+        blocks.append(cur)
+
+    by_label = {}
+    for b in blocks:
+        text = "\n".join(b["lines"])
+        if succ_re.search(text):
+            status = "warning" if (warn_re and warn_re.search(text)) else "success"
+        elif fail_re and fail_re.search(text):
+            status = "failed"
+        else:
+            status = "running"
+
+        # Tier and date come from the run header line (just after the '='
+        # separator), so scan the whole block, not only the separator line.
+        label = "Run"
+        if pre_re and pre_re.search(text):
+            label = "PREMARKET"
+        elif tier_re:
+            m = tier_re.search(text)
+            label = m.group(1) if m else "Run"
+
+        date_str = None
+        if date_re:
+            m = date_re.search(text)
+            date_str = m.group(1) if m else None
+        last_time = None
+        for ln in b["lines"]:
+            tm = time_re.search(ln)
+            if tm:
+                last_time = tm.group(1)
+        when = f"{date_str} {last_time}".strip() if (date_str or last_time) else None
+
+        by_label[label] = {"label": label, "status": status, "when": when}
+
+    order = st.get("tiers") or list(by_label.keys())
+    return [by_label[t] for t in order if t in by_label]
+
+
+def cron_status_for(info: dict) -> dict:
+    """Build the Overview status payload for one cron log entry."""
+    st = info["status"]
+    path = info.get("path")
+    out = {"name": info["name"], "schedule": info.get("schedule"), "time_note": st.get("time_note")}
+
+    if not path or not os.path.exists(path):
+        out.update({"exists": False, "runs": []})
+        return out
+
+    mtime = datetime.fromtimestamp(os.path.getmtime(path))
+    out.update({"exists": True, "mtime": mtime.strftime("%Y-%m-%d %H:%M:%S"), "ago": relative_age(mtime)})
+
+    lines = _read_tail(path, st.get("lines", 200)) or []
+    if st.get("tiered"):
+        out["runs"] = _tiered_cron_status(lines, st)
+    else:
+        out["runs"] = [_simple_cron_status(lines, st)]
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Page routes
 # ---------------------------------------------------------------------------
@@ -234,6 +378,17 @@ def api_force_run(log_key: str, run: str = Query(None)):
         return {"success": False, "output": f"Failed to launch: {e}"}
 
     return {"success": True, "output": f"Started '{label}'. Watch the log below for progress."}
+
+
+@app.get("/api/cron-status")
+def api_cron_status():
+    """Last-run status of the top-level cron jobs, for the Overview page.
+    Derived from each job's log markers (see config status blocks)."""
+    results = {}
+    for key, info in config.LOG_FILES.items():
+        if info.get("status"):
+            results[key] = cron_status_for(info)
+    return results
 
 
 # ---------------------------------------------------------------------------
