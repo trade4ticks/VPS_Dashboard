@@ -91,12 +91,22 @@ LOG_FILES = {
         "path": "/root/Portfolio_Dashboard/logs/fetch_trades.log",
         "schedule": "*/5 * * * 1-5",
         "description": "Fetches filled transactions from brokers. Weekdays, every 5 min.",
+        "runs": [{
+            "label": "Run now",
+            "lock": "/tmp/fetch_trades.lock",
+            "command": "flock -n /tmp/fetch_trades.lock /root/Portfolio_Dashboard/.venv/bin/python /root/Portfolio_Dashboard/scripts/fetch_trades.py >> /root/Portfolio_Dashboard/logs/fetch_trades.log 2>&1",
+        }],
     },
     "spx_pipeline": {
         "name": "SPX Pipeline (cron)",
         "path": "/Thetadata_Raw_SPX/logs/pipeline.log",
         "schedule": "1-59/5 * * * 1-5",
         "description": "Runs the SPX intraday pipeline every 5 minutes with a 1-minute delay, orchestrating fetch, clean, interpolate, surface snapshot, and index OHLC steps.",
+        "runs": [{
+            "label": "Run now",
+            "lock": "/tmp/spx_pipeline.lock",
+            "command": "flock -n /tmp/spx_pipeline.lock /Thetadata_Raw_SPX/.venv/bin/python /Thetadata_Raw_SPX/run_pipeline.py >> /Thetadata_Raw_SPX/logs/pipeline.log 2>&1",
+        }],
     },
     "fetch_intraday": {
         "name": "SPX Intraday Fetch (cron)",
@@ -139,6 +149,11 @@ LOG_FILES = {
         "path": "/Open_Interest/logs/pipeline.log",
         "schedule": "0 7 * * *",
         "description": "Runs the Open Interest data pipeline.",
+        "runs": [
+            {"label": "EVENING",   "lock": "/tmp/oi_research.lock", "command": "flock -n /tmp/oi_research.lock /Open_Interest/.venv/bin/python /Open_Interest/run_pipeline.py --tier EVENING >> /Open_Interest/logs/pipeline.log 2>&1"},
+            {"label": "PREMARKET", "lock": "/tmp/oi_research.lock", "command": "flock -n /tmp/oi_research.lock /Open_Interest/.venv/bin/python /Open_Interest/run_pipeline_early.py >> /Open_Interest/logs/pipeline.log 2>&1"},
+            {"label": "MORNING",   "lock": "/tmp/oi_research.lock", "command": "flock -n /tmp/oi_research.lock /Open_Interest/.venv/bin/python /Open_Interest/run_pipeline.py --tier MORNING >> /Open_Interest/logs/pipeline.log 2>&1"},
+        ],
     },
     "ai_explorer": {
         "name": "AI Explorer Log",

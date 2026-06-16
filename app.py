@@ -187,6 +187,55 @@ def api_deploy(project_key: str):
     return {"success": restart["success"], "output": output}
 
 
+@app.post("/api/force-run/{log_key}")
+def api_force_run(log_key: str, run: str = Query(None)):
+    """Manually trigger a cron job's command. Launches detached; the command
+    redirects its own output to the log file, so progress shows on the Logs page."""
+    info = config.LOG_FILES.get(log_key)
+    if info is None:
+        raise HTTPException(status_code=404, detail=f"Unknown log: {log_key}")
+
+    runs = info.get("runs")
+    if not runs:
+        raise HTTPException(status_code=400, detail="This log has no runnable command")
+
+    # Pick the requested run by label, else the first.
+    if run:
+        target = next((r for r in runs if r["label"] == run), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail=f"Unknown run: {run}")
+    else:
+        target = runs[0]
+
+    label = target["label"]
+    command = target["command"]
+    lock = target.get("lock")
+
+    # Concurrency guard: if the lock is held (by cron or a prior manual run),
+    # don't launch a second copy. flock -n exits non-zero when it can't acquire.
+    if lock:
+        check = run_command(["flock", "-n", lock, "-c", "true"], timeout=10)
+        if not check["success"]:
+            return {
+                "success": False,
+                "output": f"'{label}' looks like it's already running (lock {lock} held). Try again shortly.",
+            }
+
+    # Launch detached so a long-running pipeline doesn't block the request.
+    # The command itself appends to the log file via '>> ... 2>&1'.
+    try:
+        subprocess.Popen(
+            ["bash", "-c", command],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        return {"success": False, "output": f"Failed to launch: {e}"}
+
+    return {"success": True, "output": f"Started '{label}'. Watch the log below for progress."}
+
+
 # ---------------------------------------------------------------------------
 # API — file browser (lazy: returns immediate children only)
 # ---------------------------------------------------------------------------

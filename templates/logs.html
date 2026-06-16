@@ -6,9 +6,9 @@
 <div class="card">
     <div class="card-header">
         <div class="d-flex align-items-center gap-3 flex-wrap">
-            <select id="log-select" class="form-select form-select-sm" style="width:auto">
+            <select id="log-select" class="form-select form-select-sm" style="width:auto" onchange="loadLog()">
                 {% for key, info in log_files.items() %}
-                <option value="{{ key }}" data-desc="{{ info.description }}" data-schedule="{{ info.get('schedule', '') }}">
+                <option value="{{ key }}" data-desc="{{ info.description }}" data-schedule="{{ info.get('schedule', '') }}" data-runs='{{ info.get("runs", []) | tojson }}'>
                     {{ info.name }}
                 </option>
                 {% endfor %}
@@ -25,6 +25,8 @@
                 <i class="bi bi-arrow-clockwise"></i> Refresh
             </button>
 
+            <span id="force-run-group" class="d-flex align-items-center gap-2"></span>
+
             <div class="form-check form-switch mb-0 ms-1">
                 <input class="form-check-input" type="checkbox" id="auto-refresh" onchange="toggleAutoRefresh()">
                 <label class="form-check-label" for="auto-refresh" style="font-size:0.82rem">Auto-refresh (30s)</label>
@@ -35,6 +37,7 @@
     <div class="card-body">
         <div id="log-meta" class="log-meta">&nbsp;</div>
         <div id="log-desc" class="text-muted mb-2" style="font-size:0.78rem">&nbsp;</div>
+        <div id="force-run-output" class="output-box mb-2" style="display:none"></div>
         <div class="log-box" id="log-content">Select a log above and click Refresh.</div>
     </div>
 </div>
@@ -56,6 +59,8 @@ async function loadLog() {
         ? (opt.dataset.schedule ? opt.dataset.schedule + ' — ' : '') + opt.dataset.desc
         : '';
 
+    renderForceRun(key, opt);
+
     box.textContent = 'Loading…';
     try {
         const res  = await fetch(`/api/logs/${key}?lines=${lines}`);
@@ -70,6 +75,38 @@ async function loadLog() {
         }
     } catch (err) {
         box.textContent = 'Error: ' + err.message;
+    }
+}
+
+// Build the Force Run button(s) for the selected log. Hidden if the log has no runs.
+function renderForceRun(key, opt) {
+    const group = document.getElementById('force-run-group');
+    group.innerHTML = '';
+
+    let runs = [];
+    try { runs = JSON.parse(opt?.dataset.runs || '[]'); } catch (e) { runs = []; }
+    if (!runs.length) return;
+
+    // Single run -> one "Force Run" button. Multiple (e.g. OI tiers) -> a button each.
+    const single = runs.length === 1;
+    runs.forEach(r => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-outline-warning';
+        btn.innerHTML = single
+            ? '<i class="bi bi-play-fill"></i> Force Run'
+            : '<i class="bi bi-play-fill"></i> ' + r.label;
+        btn.onclick = () => forceRun(key, r.label, btn);
+        group.appendChild(btn);
+    });
+}
+
+async function forceRun(key, label, btn) {
+    const out = document.getElementById('force-run-output');
+    const url = `/api/force-run/${key}?run=${encodeURIComponent(label)}`;
+    const data = await postAction(url, out, btn);
+    // If it launched, give the job a moment then refresh the log to show progress.
+    if (data && data.success !== false) {
+        setTimeout(loadLog, 2000);
     }
 }
 
