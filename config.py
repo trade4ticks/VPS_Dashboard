@@ -178,7 +178,7 @@ LOG_FILES = {
         # Log times are ET (cron sets TZ=America/New_York).
         "status": {
             "tiered": True,
-            "lines": 600,
+            "lines": 2500,  # an OI run logs per-ticker; large tail so a full run fits
             "time_note": "ET",
             "tiers": ["PREMARKET", "MORNING", "EVENING"],
             # Each run is preceded by a line of '=' separators; that's the

@@ -142,16 +142,20 @@ def _tiered_cron_status(lines: list, st: dict) -> list:
     date_re = re.compile(st["date_in_start_regex"]) if st.get("date_in_start_regex") else None
     time_re = re.compile(st["time_regex"])
 
-    # Split the tail into run blocks, each beginning at a start line.
-    blocks, cur = [], None
+    # Split the tail into run blocks at each '=' separator. Lines before the
+    # first separator form a leading block: an OI run logs per-ticker, so a
+    # full run can exceed the tail window and its start separator scrolls out,
+    # leaving only the run's tail (which still ends in "Pipeline complete
+    # (tier = X)"). Keeping that leading block means we still detect it.
+    blocks, cur = [], {"lines": []}
     for line in lines:
         if start_re.search(line):
-            if cur:
+            if cur["lines"]:
                 blocks.append(cur)
-            cur = {"start": line, "lines": [line]}
-        elif cur:
+            cur = {"lines": [line]}
+        else:
             cur["lines"].append(line)
-    if cur:
+    if cur["lines"]:
         blocks.append(cur)
 
     by_label = {}
@@ -182,12 +186,16 @@ def _tiered_cron_status(lines: list, st: dict) -> list:
             tm = time_re.search(ln)
             if tm:
                 last_time = tm.group(1)
-        when = f"{date_str} {last_time}".strip() if (date_str or last_time) else None
+        when = " ".join(p for p in (date_str, last_time) if p) or None
 
         by_label[label] = {"label": label, "status": status, "when": when}
 
+    # Configured tiers first, in schedule order; then any detected run whose
+    # tier couldn't be resolved (e.g. a truncated run) so nothing is hidden.
     order = st.get("tiers") or list(by_label.keys())
-    return [by_label[t] for t in order if t in by_label]
+    ordered = [by_label[t] for t in order if t in by_label]
+    extras = [v for k, v in by_label.items() if k not in order]
+    return ordered + extras
 
 
 def cron_status_for(info: dict) -> dict:
