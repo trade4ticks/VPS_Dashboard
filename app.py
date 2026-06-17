@@ -179,17 +179,32 @@ def _tiered_cron_status(lines: list, st: dict) -> list:
                 cur["status"] = "failed"
                 cur["time"] = _time(line) or cur["time"]
 
+    def _sortkey(date_str, time_str):
+        try:
+            if date_str and time_str:
+                return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
+            if time_str:
+                return datetime.strptime(time_str, "%H:%M:%S")
+        except ValueError:
+            pass
+        return datetime.min
+
     runs = []
     for r in by_label.values():
-        r["when"] = " ".join(p for p in (r["date"], r["time"]) if p) or None
-        runs.append({"label": r["label"], "status": r["status"], "when": r["when"]})
+        when = " ".join(p for p in (r["date"], r["time"]) if p) or None
+        runs.append({"label": r["label"], "status": r["status"], "when": when,
+                     "_dt": _sortkey(r["date"], r["time"])})
 
-    # Configured tiers first, in schedule order; then any detected run whose
-    # tier couldn't be resolved, so nothing is hidden.
-    order = st.get("tiers") or [r["label"] for r in runs]
-    ordered = [r for t in order for r in runs if r["label"] == t]
-    extras = [r for r in runs if r["label"] not in order]
-    return ordered + extras
+    # Drop runs whose tier couldn't be resolved (e.g. an older log format that
+    # logged no "tier =" field); only show the configured tiers.
+    order = st.get("tiers")
+    if order:
+        runs = [r for r in runs if r["label"] in order]
+
+    runs.sort(key=lambda r: r["_dt"])  # chronological by timestamp
+    for r in runs:
+        r.pop("_dt", None)
+    return runs
 
 
 def cron_status_for(info: dict) -> dict:
