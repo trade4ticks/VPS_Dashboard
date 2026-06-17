@@ -131,8 +131,21 @@ def _simple_cron_status(lines: list, st: dict) -> dict:
     return {"label": st.get("label", "Run"), "status": status, "when": win[0] if win else None}
 
 
+def _read_grep(path: str, pattern: str, limit: int):
+    """Return marker lines matching `pattern` (extended, case-insensitive),
+    keeping the last `limit` matches. Used for the OI log, whose runs are too
+    large to tail — but the run header/outcome markers are sparse."""
+    result = run_command(["grep", "-iE", pattern, path], timeout=15)
+    if not result["success"]:  # grep exits non-zero when there are no matches
+        return []
+    lines = result["output"].splitlines()
+    return lines[-limit:] if limit else lines
+
+
 def _tiered_cron_status(lines: list, st: dict) -> list:
-    """Per-tier status for the OI pipeline (multiple tiers share one log)."""
+    """Per-tier status for the OI pipeline (tiers share one log). `lines` are
+    the grepped marker lines in file order: each run header (with tier + date)
+    is followed later by its completion or abort line."""
     start_re = re.compile(st["start_regex"])
     succ_re = re.compile(st["success_regex"])
     fail_re = re.compile(st["failure_regex"]) if st.get("failure_regex") else None
@@ -142,59 +155,40 @@ def _tiered_cron_status(lines: list, st: dict) -> list:
     date_re = re.compile(st["date_in_start_regex"]) if st.get("date_in_start_regex") else None
     time_re = re.compile(st["time_regex"])
 
-    # Split the tail into run blocks at each '=' separator. Lines before the
-    # first separator form a leading block: an OI run logs per-ticker, so a
-    # full run can exceed the tail window and its start separator scrolls out,
-    # leaving only the run's tail (which still ends in "Pipeline complete
-    # (tier = X)"). Keeping that leading block means we still detect it.
-    blocks, cur = [], {"lines": []}
+    def _time(line):
+        m = time_re.search(line)
+        return m.group(1) if m else None
+
+    by_label, cur = {}, None
     for line in lines:
-        if start_re.search(line):
-            if cur["lines"]:
-                blocks.append(cur)
-            cur = {"lines": [line]}
-        else:
-            cur["lines"].append(line)
-    if cur["lines"]:
-        blocks.append(cur)
+        if start_re.search(line):  # new run header
+            if pre_re and pre_re.search(line):
+                label = "PREMARKET"
+            elif tier_re and tier_re.search(line):
+                label = tier_re.search(line).group(1)
+            else:
+                label = "Run"
+            date_str = date_re.search(line).group(1) if (date_re and date_re.search(line)) else None
+            cur = {"label": label, "status": "running", "date": date_str, "time": _time(line)}
+            by_label[label] = cur  # latest run for this tier wins
+        elif cur is not None:
+            if succ_re.search(line):
+                cur["status"] = "warning" if (warn_re and warn_re.search(line)) else "success"
+                cur["time"] = _time(line) or cur["time"]
+            elif fail_re and fail_re.search(line):
+                cur["status"] = "failed"
+                cur["time"] = _time(line) or cur["time"]
 
-    by_label = {}
-    for b in blocks:
-        text = "\n".join(b["lines"])
-        if succ_re.search(text):
-            status = "warning" if (warn_re and warn_re.search(text)) else "success"
-        elif fail_re and fail_re.search(text):
-            status = "failed"
-        else:
-            status = "running"
-
-        # Tier and date come from the run header line (just after the '='
-        # separator), so scan the whole block, not only the separator line.
-        label = "Run"
-        if pre_re and pre_re.search(text):
-            label = "PREMARKET"
-        elif tier_re:
-            m = tier_re.search(text)
-            label = m.group(1) if m else "Run"
-
-        date_str = None
-        if date_re:
-            m = date_re.search(text)
-            date_str = m.group(1) if m else None
-        last_time = None
-        for ln in b["lines"]:
-            tm = time_re.search(ln)
-            if tm:
-                last_time = tm.group(1)
-        when = " ".join(p for p in (date_str, last_time) if p) or None
-
-        by_label[label] = {"label": label, "status": status, "when": when}
+    runs = []
+    for r in by_label.values():
+        r["when"] = " ".join(p for p in (r["date"], r["time"]) if p) or None
+        runs.append({"label": r["label"], "status": r["status"], "when": r["when"]})
 
     # Configured tiers first, in schedule order; then any detected run whose
-    # tier couldn't be resolved (e.g. a truncated run) so nothing is hidden.
-    order = st.get("tiers") or list(by_label.keys())
-    ordered = [by_label[t] for t in order if t in by_label]
-    extras = [v for k, v in by_label.items() if k not in order]
+    # tier couldn't be resolved, so nothing is hidden.
+    order = st.get("tiers") or [r["label"] for r in runs]
+    ordered = [r for t in order for r in runs if r["label"] == t]
+    extras = [r for r in runs if r["label"] not in order]
     return ordered + extras
 
 
@@ -211,10 +205,11 @@ def cron_status_for(info: dict) -> dict:
     mtime = datetime.fromtimestamp(os.path.getmtime(path))
     out.update({"exists": True, "mtime": mtime.strftime("%Y-%m-%d %H:%M:%S"), "ago": relative_age(mtime)})
 
-    lines = _read_tail(path, st.get("lines", 200)) or []
     if st.get("tiered"):
+        lines = _read_grep(path, st["grep_regex"], st.get("marker_lines", 400))
         out["runs"] = _tiered_cron_status(lines, st)
     else:
+        lines = _read_tail(path, st.get("lines", 200)) or []
         out["runs"] = [_simple_cron_status(lines, st)]
     return out
 

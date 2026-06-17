@@ -176,20 +176,25 @@ LOG_FILES = {
         # Per-tier status. Each run logs its tier + date in the start line
         # (e.g. "Pipeline starting (today = 2026-06-16, tier = MORNING)").
         # Log times are ET (cron sets TZ=America/New_York).
+        # An OI run logs per-ticker (~900 lines), so tailing can't reach back
+        # far enough to cover all tiers. Instead we grep only the sparse run
+        # markers (headers + outcomes) and pair them up in file order.
         "status": {
             "tiered": True,
-            "lines": 2500,  # an OI run logs per-ticker; large tail so a full run fits
+            "marker_lines": 400,  # last N grepped marker lines (covers many runs)
             "time_note": "ET",
             "tiers": ["PREMARKET", "MORNING", "EVENING"],
-            # Each run is preceded by a line of '=' separators; that's the
-            # true run boundary (the tier/date line follows it).
-            "start_regex": r"={6,}",
+            # Marker lines to extract: run headers, completions, aborts.
+            "grep_regex": r"[Pp]ipeline starting|[Pp]ipeline complete|aborting",
+            # A run header: "Pipeline starting (today = D, tier = X)" or the
+            # premarket "Early pipeline starting (today = D)".
+            "start_regex": r"[Pp]ipeline starting",
             "premarket_regex": r"Early pipeline starting",
             "tier_regex": r"tier = (\w+)",
             "date_in_start_regex": r"today = (\d{4}-\d{2}-\d{2})",
             "time_regex": r"^(\d{2}:\d{2}:\d{2})",
-            "time_format": "%H:%M:%S",
-            "success_regex": r"Pipeline complete",
+            # Completion: "Pipeline complete ..." or "Early pipeline complete ...".
+            "success_regex": r"[Pp]ipeline complete",
             "failure_regex": r"aborting|Traceback|FAILED",
             "warn_regex": r"bin_build_rc = [1-9]",
         },
