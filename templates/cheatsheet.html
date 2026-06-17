@@ -24,7 +24,7 @@
             ] %}
             {% for cmd, desc in svc_cmds %}
             <div class="cheat-item">
-                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                <div class="cheat-cmd" onclick="copyCheat(this)">
                     <span>{{ cmd }}</span>
                     <span class="cheat-copy-hint">click to copy</span>
                 </div>
@@ -48,7 +48,7 @@
             ] %}
             {% for cmd, desc in git_cmds %}
             <div class="cheat-item">
-                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                <div class="cheat-cmd" onclick="copyCheat(this)">
                     <span>{{ cmd }}</span>
                     <span class="cheat-copy-hint">click to copy</span>
                 </div>
@@ -66,10 +66,15 @@
                 ("crontab -e",                                                   "Edit cron jobs (opens in editor)"),
                 ("tail -f /root/Portfolio_Dashboard/logs/fetch_trades.log",      "Watch fetch_trades log live"),
                 ("tail -n 100 /root/Portfolio_Dashboard/logs/fetch_trades.log",  "Last 100 lines of fetch_trades log"),
+                ("tail -n 30 /Thetadata_Raw_SPX/logs/pipeline.log",              "Last 30 lines of SPX pipeline log"),
+                ("tail -f /Thetadata_Raw_SPX/logs/pipeline.log",                 "Watch SPX pipeline log live"),
+                ("tail -n 30 /Open_Interest/logs/pipeline.log",                  "Last 30 lines of OI pipeline log"),
+                ("tail -f /Open_Interest/logs/pipeline.log",                     "Watch OI pipeline log live"),
+                ("grep -E 'starting|complete|aborting' /Open_Interest/logs/pipeline.log | tail -n 20", "OI: each run's start/outcome (last ~20)"),
             ] %}
             {% for cmd, desc in cron_cmds %}
             <div class="cheat-item">
-                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                <div class="cheat-cmd" onclick="copyCheat(this)">
                     <span>{{ cmd }}</span>
                     <span class="cheat-copy-hint">click to copy</span>
                 </div>
@@ -97,7 +102,7 @@
             ] %}
             {% for cmd, desc in docker_cmds %}
             <div class="cheat-item">
-                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                <div class="cheat-cmd" onclick="copyCheat(this)">
                     <span>{{ cmd }}</span>
                     <span class="cheat-copy-hint">click to copy</span>
                 </div>
@@ -122,7 +127,7 @@
             ] %}
             {% for cmd, desc in sys_cmds %}
             <div class="cheat-item">
-                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                <div class="cheat-cmd" onclick="copyCheat(this)">
                     <span>{{ cmd }}</span>
                     <span class="cheat-copy-hint">click to copy</span>
                 </div>
@@ -144,7 +149,7 @@
             ] %}
             {% for cmd, desc in py_cmds %}
             <div class="cheat-item">
-                <div class="cheat-cmd" onclick="copyText('{{ cmd }}', this)">
+                <div class="cheat-cmd" onclick="copyCheat(this)">
                     <span>{{ cmd }}</span>
                     <span class="cheat-copy-hint">click to copy</span>
                 </div>
@@ -160,8 +165,12 @@
 
 {% block scripts %}
 <script>
-// Override copyText to handle the cheat sheet (no element flash needed, just clipboard)
-function copyText(text, el) {
+// Copy a cheat-sheet command. Reads the command text straight from the DOM
+// (the first <span> in the .cheat-cmd) so commands with quotes/pipes copy
+// correctly — passing them through an inline JS string literal would break.
+function copyCheat(el) {
+    const cmdSpan = el.querySelector('span:not(.cheat-copy-hint)');
+    const text = cmdSpan ? cmdSpan.textContent : '';
     navigator.clipboard.writeText(text).then(() => {
         const hint = el.querySelector('.cheat-copy-hint');
         el.style.background = 'rgba(34,197,94,0.15)';
