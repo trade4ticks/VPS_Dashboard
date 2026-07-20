@@ -107,6 +107,12 @@ LOG_FILES = {
             "failure_regex": r"ERROR\s+\[Schwab\]",
         },
     },
+    "pg_backup": {
+        "name": "Portfolio Trades Backup (cron)",
+        "path": "/root/Portfolio_Dashboard/logs/pg_backup.log",
+        "schedule": "0 2 * * *",
+        "description": "Backup of Portfolio Dashboard to Google Drive. Nightly 2am.",
+    },
     "spx_pipeline": {
         "name": "SPX Pipeline (cron)",
         "path": "/Thetadata_Raw_SPX/logs/pipeline.log",
