@@ -227,14 +227,27 @@ BROWSE_PATHS = {
         "name": "SPX Options Data (Volume 2)",
         "path": "/mnt/volume2/spx_options",
     },
+    "volume3": {
+        "name": "Volume 3",
+        "path": "/mnt/trading_volume_3",
+    },
 }
 
 # Directories tracked on the Disk page (per-path subdirectory breakdown).
 DISK_PATHS = {
     "SPX Options (Parquet)": "/data/spx_options",
     "OI Raw (Parquet)": "/data/oi_raw",
-    "SPX Options — Volume 1": "/mnt/volume1/spx_options",
-    "SPX Options — Volume 2": "/mnt/volume2/spx_options",
+    # The block-storage volumes are deliberately NOT listed here. Every entry in
+    # this dict is walked recursively (two rglob passes + a stat per file) on
+    # each /api/disk call, and these volumes hold years of date-partitioned
+    # parquet leaves. Their usage comes from the DISK_VOLUMES df cards instead,
+    # which is filesystem-level and costs the same at any file count:
+    #   /mnt/volume1           -> "Block Storage 1"
+    #   /mnt/volume2           -> "Block Storage 2"
+    #   /mnt/trading_volume_3  -> "Block Storage 3"
+    # If per-directory breakdowns are wanted again, precompute them in a nightly
+    # job that writes a summary file for this endpoint to read -- not by walking
+    # the tree on request.
 }
 
 # Filesystems shown on the Disk page (df usage cards).
@@ -242,6 +255,7 @@ DISK_VOLUMES = {
     "Root Filesystem": "/",
     "Block Storage 1": "/mnt/volume1",
     "Block Storage 2": "/mnt/volume2",
+    "Block Storage 3": "/mnt/trading_volume_3",
 }
 
 # PostgreSQL connection for Disk page DB/table size stats.
@@ -266,5 +280,9 @@ PARQUET_SOURCES = {
     "block_storage_2": {
         "name": "Block Storage 2",
         "path": "/mnt/volume2/spx_options",
+    },
+    "block_storage_3": {
+        "name": "Block Storage 3",
+        "path": "/mnt/trading_volume_3",
     },
 }
