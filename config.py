@@ -205,6 +205,12 @@ LOG_FILES = {
             "warn_regex": r"bin_build_rc = [1-9]",
         },
     },
+    "equity_iv_intraday": {
+        "name": "Equity IV Intraday (cron)",
+        "path": "/Open_Interest/logs/live_surface.log",
+        "schedule": "*/5 9-16 * * 1-5",
+        "description": "Fetches live equity chain snapshots, cleans the data, builds the interpolated surface, and calculates metrics.",
+    },
     "ai_explorer": {
         "name": "AI Explorer Log",
         "type": "postgres",
