@@ -211,6 +211,12 @@ LOG_FILES = {
         "schedule": "*/5 9-16 * * 1-5",
         "description": "Fetches live equity chain snapshots, cleans the data, builds the interpolated surface, and calculates metrics.",
     },
+    "earnings": {
+        "name": "Earnings (cron)",
+        "path": "/Open_Interest/logs/earnings.log",
+        "schedule": "30 20 * * 1-5",
+        "description": "Nightly update of future earnings dates.",
+    },
     "ai_explorer": {
         "name": "AI Explorer Log",
         "type": "postgres",
