@@ -112,6 +112,15 @@ LOG_FILES = {
         "path": "/root/Portfolio_Dashboard/logs/pg_backup.log",
         "schedule": "0 2 * * *",
         "description": "Backup of Portfolio Dashboard to Google Drive. Nightly 2am.",
+        # "2026-08-25 02:00:07 INFO Backup successful - portfolio_....sql (2.0M)"
+        "status": {
+            "lines": 40,
+            "label": "Backup",
+            "ts_regex": r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
+            "ts_format": "%Y-%m-%d %H:%M:%S",
+            "success_regex": r"Backup successful",
+            "failure_regex": r"Backup failed|Traceback|CRITICAL|ERROR",
+        },
     },
     "spx_pipeline": {
         "name": "SPX Pipeline (cron)",
@@ -210,12 +219,43 @@ LOG_FILES = {
         "path": "/Open_Interest/logs/live_pipeline.log",
         "schedule": "*/5 9-16 * * 1-5",
         "description": "Fetches live equity chain snapshots, cleans the data, builds the interpolated surface, and calculates metrics.",
+        # A run ends with a "=== pipeline ===" block whose last line is
+        # "  total    84s". Those summary lines carry no timestamp, so the run
+        # time is carried forward from the run's "Log: ..._YYYYMMDD_HHMMSS.log".
+        "status": {
+            "lines": 120,
+            "label": "Equity IV Intraday",
+            "ts_regex": r"fetch_live_surface_(\d{8}_\d{6})\.log",
+            "ts_format": "%Y%m%d_%H%M%S",
+            "ts_carry": True,
+            "display_format": "%Y-%m-%d %H:%M",
+            "success_regex": r"^\s*total\s+\d+s",
+            "failure_regex": r"Traceback|CRITICAL|aborting",
+        },
     },
     "earnings": {
         "name": "Earnings (cron)",
         "path": "/Open_Interest/logs/earnings.log",
         "schedule": "30 20 * * 1-5",
         "description": "Nightly update of future earnings dates.",
+        # A run ends with "  calendar rows   2262 upserted". As with the live
+        # surface log the summary lines are untimestamped, so the run time is
+        # carried from "Log: .../fetch_earnings_calendar_YYYYMMDD_HHMMSS.log".
+        "status": {
+            "lines": 120,
+            "label": "Earnings",
+            "ts_regex": r"fetch_earnings_calendar_(\d{8}_\d{6})\.log",
+            "ts_format": "%Y%m%d_%H%M%S",
+            "ts_carry": True,
+            "display_format": "%Y-%m-%d %H:%M",
+            "success_regex": r"calendar rows\s+[\d,]+\s+upserted",
+            # NOTE: a healthy run still prints "FAILED  1  - SMCI" -- that is a
+            # per-ticker tally, NOT a failed run. Matching it as a failure would
+            # mark every good run red, so it drives the warning badge instead
+            # and is deliberately absent from failure_regex.
+            "failure_regex": r"Traceback|CRITICAL|aborting",
+            "warn_regex": r"^\s*FAILED\s+[1-9]",
+        },
     },
     "ai_explorer": {
         "name": "AI Explorer Log",
@@ -224,6 +264,22 @@ LOG_FILES = {
         "description": "Query and response log from the AI Explorer page.",
     },
 }
+
+# Overview page "Cron Jobs -- Last Run" grid. Each entry renders one card and
+# concatenates the run rows of its member LOG_FILES keys, so several jobs can
+# share a card. Members with a "status" block get real success/failure
+# detection; members without one fall back to a neutral row showing the log's
+# last-write time (mtime), which is when the job last produced output.
+# "name" is optional -- a single-member card falls back to that job's name.
+CRON_OVERVIEW_CARDS = [
+    {"members": ["fetch_trades"]},
+    {"members": ["spx_pipeline"]},
+    {
+        "name": "Equity Analysis",
+        "members": ["oi_pipeline", "equity_iv_intraday", "earnings"],
+    },
+    {"members": ["pg_backup"]},
+]
 
 # Non-project directories shown in the File Browser (no git/deploy buttons).
 BROWSE_PATHS = {

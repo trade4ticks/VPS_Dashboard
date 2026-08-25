@@ -98,7 +98,15 @@ def _simple_cron_status(lines: list, st: dict) -> dict:
     ts_re = re.compile(st["ts_regex"])
     succ_re = re.compile(st["success_regex"])
     fail_re = re.compile(st["failure_regex"]) if st.get("failure_regex") else None
+    warn_re = re.compile(st["warn_regex"]) if st.get("warn_regex") else None
     fmt = st["ts_format"]
+    # Some logs (the Open_Interest ones) print their summary markers without a
+    # per-line timestamp; the run's time appears only once, in its
+    # "Log: .../..._YYYYMMDD_HHMMSS.log" header. With ts_carry the most recent
+    # timestamp seen is attributed to later markers, so every marker in a run
+    # block shares that run's timestamp -- which is also how a warning is
+    # matched to the success it belongs to.
+    carry = st.get("ts_carry", False)
 
     def _ts(line):
         m = ts_re.search(line)
@@ -109,12 +117,19 @@ def _simple_cron_status(lines: list, st: dict) -> dict:
         except ValueError:
             return m.group(1), None
 
-    last_succ = last_fail = None  # (raw, dt)
+    last_succ = last_fail = last_warn = None  # (raw, dt)
+    running = None                            # most recent timestamp seen
     for line in lines:
+        found = _ts(line)
+        if found:
+            running = found
+        cur = found or (running if carry else None)
         if succ_re.search(line):
-            last_succ = _ts(line) or last_succ
+            last_succ = cur or last_succ
         if fail_re and fail_re.search(line):
-            last_fail = _ts(line) or last_fail
+            last_fail = cur or last_fail
+        if warn_re and warn_re.search(line):
+            last_warn = cur or last_warn
 
     def _dt(pair):
         return pair[1] if pair and pair[1] else datetime.min
@@ -128,7 +143,17 @@ def _simple_cron_status(lines: list, st: dict) -> dict:
     else:
         win, status = None, "unknown"
 
-    return {"label": st.get("label", "Run"), "status": status, "when": win[0] if win else None}
+    # A warning marker from the same run as the winning success (identical
+    # carried timestamp) downgrades success -> warning rather than failure.
+    if status == "success" and last_warn and win and last_warn[0] == win[0]:
+        status = "warning"
+
+    when = None
+    if win:
+        disp = st.get("display_format")
+        when = win[1].strftime(disp) if disp and win[1] else win[0]
+
+    return {"label": st.get("label", "Run"), "status": status, "when": when}
 
 
 def _read_grep(path: str, pattern: str, limit: int):
@@ -398,14 +423,96 @@ def api_force_run(log_key: str, run: str = Query(None)):
     return {"success": True, "output": f"Started '{label}'. Watch the log below for progress."}
 
 
+def _mtime_only_status(info: dict) -> dict:
+    """Fallback payload for a job with no "status" block: we can't classify the
+    run without knowing the log's line format, but the log's last-write time is
+    still when the job last produced output."""
+    path = info.get("path")
+    label = info.get("overview_label") or info["name"].replace(" (cron)", "")
+    out = {"name": info["name"], "schedule": info.get("schedule"), "time_note": None}
+
+    if not path or not os.path.exists(path):
+        out.update({"exists": False, "runs": []})
+        return out
+
+    mtime = datetime.fromtimestamp(os.path.getmtime(path))
+    out.update({
+        "exists": True,
+        "mtime": mtime.strftime("%Y-%m-%d %H:%M:%S"),
+        "ago": relative_age(mtime),
+        "runs": [{
+            "label": label,
+            "status": "unknown",
+            "when": mtime.strftime("%Y-%m-%d %H:%M"),
+        }],
+    })
+    return out
+
+
+def _overview_card(card: dict) -> dict:
+    """Merge one or more LOG_FILES entries into a single Overview card.
+
+    Run rows are concatenated in member order. Because members can timestamp
+    differently (the OI tiers log bare ET times, others log full datetimes),
+    a per-member time_note is folded into its own rows unless every member
+    agrees on the note -- that keeps the card-level note when there's only one.
+    """
+    parts = []
+    for key in card["members"]:
+        info = config.LOG_FILES.get(key)
+        if not info:
+            continue
+        part = cron_status_for(info) if info.get("status") else _mtime_only_status(info)
+        # A member whose log is missing yields no rows; on a shared card that
+        # would make the job disappear silently, so stand in a placeholder row
+        # (one per tier for tiered jobs) that renders with an em dash.
+        if not part.get("runs"):
+            st = info.get("status") or {}
+            labels = st.get("tiers") if st.get("tiered") else [
+                st.get("label") or info.get("overview_label")
+                or info["name"].replace(" (cron)", "")
+            ]
+            part["runs"] = [{"label": l, "status": "unknown", "when": None} for l in labels]
+        parts.append(part)
+
+    if not parts:
+        return None
+
+    notes = {p.get("time_note") for p in parts if p.get("runs")}
+    uniform_note = notes.pop() if len(notes) == 1 else None
+    if uniform_note is None:
+        for p in parts:
+            note = p.get("time_note")
+            if note:
+                for r in p.get("runs", []):
+                    if r.get("when"):
+                        r["when"] = f"{r['when']} {note}"
+
+    runs = [r for p in parts for r in p.get("runs", [])]
+    existing = [p for p in parts if p.get("exists")]
+    newest = max((p["mtime"] for p in existing), default=None)
+
+    return {
+        "name": card.get("name") or parts[0]["name"],
+        "schedule": parts[0].get("schedule") if len(parts) == 1 else None,
+        "time_note": uniform_note,
+        "exists": bool(existing),
+        "mtime": newest,
+        "ago": relative_age(datetime.strptime(newest, "%Y-%m-%d %H:%M:%S")) if newest else None,
+        "runs": runs,
+    }
+
+
 @app.get("/api/cron-status")
 def api_cron_status():
     """Last-run status of the top-level cron jobs, for the Overview page.
-    Derived from each job's log markers (see config status blocks)."""
+    Cards are composed per config.CRON_OVERVIEW_CARDS; rows come from each
+    member's log markers (see config status blocks)."""
     results = {}
-    for key, info in config.LOG_FILES.items():
-        if info.get("status"):
-            results[key] = cron_status_for(info)
+    for i, card in enumerate(config.CRON_OVERVIEW_CARDS):
+        payload = _overview_card(card)
+        if payload:
+            results[card.get("name") or card["members"][0] or str(i)] = payload
     return results
 
 
