@@ -207,7 +207,7 @@ LOG_FILES = {
     },
     "equity_iv_intraday": {
         "name": "Equity IV Intraday (cron)",
-        "path": "/Open_Interest/logs/live_surface.log",
+        "path": "/Open_Interest/logs/live_pipeline.log",
         "schedule": "*/5 9-16 * * 1-5",
         "description": "Fetches live equity chain snapshots, cleans the data, builds the interpolated surface, and calculates metrics.",
     },
