@@ -1,7 +1,10 @@
+import json
 import os
 import re
 import socket
 import subprocess
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -268,6 +271,7 @@ def services(request: Request):
     return templates.TemplateResponse(request, "services.html", {
         "active": "services",
         "services": config.SERVICES,
+        "trading": config.TRADING_CONTROL,
         "projects": config.PROJECTS,
     })
 
@@ -355,12 +359,24 @@ def api_git_pull(project_key: str):
     return run_command(["git", "pull"], cwd=project["path"])
 
 
+def project_units(project: dict) -> list:
+    """Systemd units to restart for a project, in order. A project may declare a
+    single "service" (str) or several "services" (list) -- /spx_analysis_dashboard
+    is one repo serving both spx-dashboard and spx-live."""
+    units = project.get("services")
+    if units:
+        return [u for u in units if u]
+    unit = project.get("service")
+    return [unit] if unit else []
+
+
 @app.post("/api/deploy/{project_key}")
 def api_deploy(project_key: str):
     if project_key not in config.PROJECTS:
         raise HTTPException(status_code=404, detail=f"Unknown project: {project_key}")
     project = config.PROJECTS[project_key]
-    if not project.get("service"):
+    units = project_units(project)
+    if not units:
         raise HTTPException(status_code=400, detail="No systemd unit configured for this project")
 
     pull = run_command(["git", "pull"], cwd=project["path"])
@@ -368,10 +384,107 @@ def api_deploy(project_key: str):
     if not pull["success"]:
         return {"success": False, "output": output}
 
-    restart = run_command(["systemctl", "restart", project["service"]])
-    output += f"\n=== systemctl restart {project['service']} ===\n"
-    output += restart["output"] if restart["output"] else "Restarted successfully."
-    return {"success": restart["success"], "output": output}
+    # Restart every unit even if an earlier one fails: they share a working tree
+    # that has already been updated, so stopping half-way would leave the
+    # remaining unit running code that no longer matches the repo.
+    ok = True
+    for unit in units:
+        restart = run_command(["systemctl", "restart", unit])
+        output += f"\n=== systemctl restart {unit} ===\n"
+        output += (restart["output"] if restart["output"] else "Restarted successfully.") + "\n"
+        ok = ok and restart["success"]
+    return {"success": ok, "output": output}
+
+
+# ---------------------------------------------------------------------------
+# API — live trading arm/disarm (proxied to the spx-live service)
+# ---------------------------------------------------------------------------
+
+def _trading_call(method: str, payload: dict = None) -> dict:
+    """Call the live service's /trading endpoint and normalise the outcome.
+
+    That endpoint binds localhost only and takes no credentials -- the safety
+    property is positional, not authenticated: reaching it requires already
+    being on the VPS. This dashboard is the intended caller. Failures here are
+    connection- or gate-level (409 when the environment gate is off), never
+    auth, so the service's own "reason" is what the operator needs to see.
+    """
+    cfg = config.TRADING_CONTROL
+    url = cfg["base_url"].rstrip("/") + cfg.get("path", "/trading")
+    data = json.dumps(payload).encode() if payload is not None else None
+    headers = {"Content-Type": "application/json"} if data else {}
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=cfg.get("timeout", 5)) as resp:
+            raw = resp.read() or b"{}"
+            return {"ok": True, "status": resp.status, "body": json.loads(raw)}
+    except urllib.error.HTTPError as exc:
+        raw = exc.read() or b""
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            body = {"reason": raw.decode(errors="replace").strip()}
+        return {"ok": False, "status": exc.code, "body": body}
+    except urllib.error.URLError as exc:
+        return {"ok": False, "status": None,
+                "body": {"reason": f"live service unreachable: {exc.reason}"}}
+    except (ValueError, OSError) as exc:
+        return {"ok": False, "status": None,
+                "body": {"reason": f"bad response from live service: {exc}"}}
+
+
+def _trading_state(body: dict) -> dict:
+    return {
+        "enabled": body.get("enabled"),
+        "armed": body.get("armed"),
+        "can_arm": body.get("can_arm"),
+        "reason": body.get("reason"),
+    }
+
+
+@app.get("/api/trading")
+def api_trading_get():
+    """Current arm state of the live trading service."""
+    res = _trading_call("GET")
+    if not res["ok"]:
+        reason = res["body"].get("reason") or f"HTTP {res['status']}"
+        return {"available": False, "reason": reason,
+                "enabled": None, "armed": None, "can_arm": False}
+    return {"available": True, **_trading_state(res["body"])}
+
+
+class TradingArmBody(BaseModel):
+    armed: bool
+
+
+@app.post("/api/trading")
+def api_trading_set(body: TradingArmBody):
+    """Arm or disarm live trading. A refusal (409 when the environment gate is
+    off) is reported with the service's own reason rather than a bare failure,
+    and the state is echoed back so the UI never has to assume it succeeded."""
+    verb = "Arm" if body.armed else "Disarm"
+    res = _trading_call("POST", {"armed": body.armed})
+
+    if not res["ok"]:
+        reason = res["body"].get("reason") or f"HTTP {res['status']}"
+        state = _trading_state(res["body"])
+        # Re-read rather than trust the error body to carry full state.
+        follow = _trading_call("GET")
+        if follow["ok"]:
+            state = _trading_state(follow["body"])
+        return {
+            "success": False,
+            "output": f"{verb} refused by the live service.\n\nReason: {reason}",
+            "available": follow["ok"],
+            **state,
+        }
+
+    state = _trading_state(res["body"])
+    armed_now = state.get("armed")
+    summary = "ARMED - live orders can be placed." if armed_now else "DISARMED - live orders are blocked."
+    detail = f"\n\nReason: {state['reason']}" if state.get("reason") else ""
+    return {"success": True, "output": f"{verb} accepted. {summary}{detail}",
+            "available": True, **state}
 
 
 @app.post("/api/force-run/{log_key}")

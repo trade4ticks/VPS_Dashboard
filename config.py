@@ -30,6 +30,12 @@ SERVICES = {
         "host": "localhost",
         "port": 8000,
     },
+    "spx_live": {
+        "name": "SPX Live Tape",
+        "service": "spx-live.service",
+        "host": "localhost",
+        "port": 8001,
+    },
     "vps_dashboard": {
         "name": "VPS Dashboard",
         "service": "vps_dashboard.service",
@@ -60,7 +66,10 @@ PROJECTS = {
     "spx_analysis_dashboard": {
         "name": "SPX Analysis Dashboard",
         "path": "/spx_analysis_dashboard",
-        "service": "spx-dashboard.service",
+        # One repo, two units: a single pull updates both, and each needs its
+        # own restart. Deploy restarts them in the order listed. Use "services"
+        # (list) for multi-unit projects; "service" (str) still works for one.
+        "services": ["spx-dashboard.service", "spx-live.service"],
     },
     "vps_dashboard": {
         "name": "VPS Dashboard",
@@ -82,6 +91,17 @@ PROJECTS = {
         "path": "/spx_surface_snapshot",
         "service": None,
     },
+}
+
+# Live-trading arm/disarm control, served by the spx-live unit. The endpoint
+# is localhost-only and unauthenticated by design: the safety property is that
+# arming can only be done from the VPS itself, so the public trading page
+# cannot place orders on its own. This dashboard proxies it -- see /api/trading.
+TRADING_CONTROL = {
+    "name": "SPX Live Trading",
+    "base_url": "http://127.0.0.1:8001",
+    "path": "/trading",
+    "timeout": 5,
 }
 
 # Log files shown on the Logs page.

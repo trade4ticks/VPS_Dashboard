@@ -3,6 +3,35 @@
 {% block content %}
 <h1 class="page-title">Services</h1>
 
+<!-- ── Live trading arm/disarm ─────────────────────────────── -->
+<div class="section-header">Live Trading</div>
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+            <div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="status-badge s-unknown" id="trading-badge">
+                        <span class="dot"></span>checking&hellip;
+                    </span>
+                    <span class="fw-500">{{ trading.name }}</span>
+                </div>
+                <div class="text-muted mt-1" id="trading-meta" style="font-size:0.78rem">&mdash;</div>
+                <div class="mt-1" id="trading-reason" style="font-size:0.78rem;display:none"></div>
+            </div>
+            <div class="d-flex gap-2">
+                <button id="btn-arm" class="btn btn-sm btn-danger" disabled
+                        onclick="setArmed(true, this)">
+                    <i class="bi bi-unlock"></i> Arm
+                </button>
+                <button id="btn-disarm" class="btn btn-sm btn-outline-secondary" disabled
+                        onclick="setArmed(false, this)">
+                    <i class="bi bi-shield-lock"></i> Disarm
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ── System services ─────────────────────────────────────── -->
 <div class="section-header">System Services</div>
 <div class="card mb-4">
@@ -59,8 +88,12 @@
                 {% for key, proj in projects.items() %}
                 <tr>
                     <td class="align-middle fw-500">{{ proj.name }}</td>
+                    {% set units = proj.services if proj.services else ([proj.service] if proj.service else []) %}
                     <td class="align-middle text-muted" style="font-size:0.75rem;font-family:monospace">
                         {{ proj.path }}
+                        {% if units|length > 1 %}
+                        <div style="font-size:0.7rem;color:#94a3b8">{{ units|join(' + ') }}</div>
+                        {% endif %}
                     </td>
                     <td class="align-middle">
                         <div class="d-flex gap-1 flex-wrap">
@@ -68,10 +101,11 @@
                                     onclick="doAction('/api/git-pull/{{ key }}', this)">
                                 <i class="bi bi-download"></i> Git Pull
                             </button>
-                            {% if proj.service %}
+                            {% if units %}
                             <button class="btn btn-sm btn-primary"
                                     onclick="doAction('/api/deploy/{{ key }}', this)">
-                                <i class="bi bi-rocket-takeoff"></i> Pull &amp; Restart
+                                <i class="bi bi-rocket-takeoff"></i>
+                                Pull &amp; Restart{% if units|length == 2 %} Both{% elif units|length > 2 %} All{% endif %}
                             </button>
                             {% endif %}
                         </div>
@@ -107,6 +141,92 @@ async function loadServiceStatus() {
 
 loadServiceStatus();
 setInterval(loadServiceStatus, 30000);
+
+// ── Live trading arm/disarm ────────────────────────────────────────────────
+// Colour follows risk, not service health: green = disarmed (safe),
+// red = armed (real orders possible).
+function renderTrading(t) {
+    const badge  = document.getElementById('trading-badge');
+    const meta   = document.getElementById('trading-meta');
+    const reason = document.getElementById('trading-reason');
+    const armBtn = document.getElementById('btn-arm');
+    const disBtn = document.getElementById('btn-disarm');
+
+    if (!t || t.available === false) {
+        badge.className = 'status-badge s-unknown';
+        badge.innerHTML = '<span class="dot"></span>unavailable';
+        meta.textContent = t && t.reason ? t.reason : 'live service not reachable';
+        reason.style.display = 'none';
+        armBtn.disabled = true;
+        disBtn.disabled = true;
+        return;
+    }
+
+    const armed = t.armed === true;
+    badge.className = 'status-badge ' + (armed ? 's-failed' : 's-active');
+    badge.innerHTML = `<span class="dot"></span>${armed ? 'ARMED' : 'DISARMED'}`;
+    meta.textContent = armed
+        ? 'Live orders can be placed.'
+        : 'Live orders are blocked.';
+    meta.textContent += t.enabled === false ? '  Environment gate: off.' : '';
+
+    // Surface the service's own explanation whenever arming is not available.
+    if (t.reason && (!t.can_arm || armed === false)) {
+        reason.textContent = t.reason;
+        reason.className = t.can_arm ? 'text-muted' : 'text-danger';
+        reason.style.display = 'block';
+    } else {
+        reason.style.display = 'none';
+    }
+
+    armBtn.disabled = armed || t.can_arm === false;
+    // Disarm stays clickable whenever the service answers, so it is always
+    // possible to slam trading off without first reasoning about state.
+    disBtn.disabled = false;
+}
+
+async function loadTrading() {
+    try {
+        const res = await fetch('/api/trading');
+        renderTrading(await res.json());
+    } catch (err) {
+        renderTrading({available: false, reason: 'Request failed: ' + err.message});
+    }
+}
+
+async function setArmed(armed, btn) {
+    if (armed && !confirm(
+        'Arm live trading?\n\n' +
+        'The live service will be able to place real orders until you disarm it.'
+    )) return;
+
+    const out   = document.getElementById('output');
+    const label = document.getElementById('action-label');
+    label.textContent = 'Last action: ' + (armed ? 'Arm' : 'Disarm') + ' live trading';
+    label.style.display = 'block';
+
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Working…';
+    try {
+        const res = await fetch('/api/trading', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({armed: armed}),
+        });
+        const data = await res.json();
+        showOutput(out, data.output || data.detail, data.success !== false);
+        renderTrading(data);
+    } catch (err) {
+        showOutput(out, 'Request failed: ' + err.message, false);
+    } finally {
+        btn.innerHTML = orig;
+        loadTrading();   // re-read authoritative state
+    }
+}
+
+loadTrading();
+setInterval(loadTrading, 30000);
 
 // Action button handler — shows result in the shared output box
 async function doAction(url, btn) {
