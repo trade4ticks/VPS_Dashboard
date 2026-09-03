@@ -5,26 +5,31 @@
 
 <!-- ── Live trading arm/disarm ─────────────────────────────── -->
 <div class="section-header">Live Trading</div>
-<div class="card mb-4">
+<div class="card mb-4" id="trading-card">
     <div class="card-body">
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
-            <div>
+            <div style="min-width:20rem">
                 <div class="d-flex align-items-center gap-2">
                     <span class="status-badge s-unknown" id="trading-badge">
                         <span class="dot"></span>checking&hellip;
                     </span>
                     <span class="fw-500">{{ trading.name }}</span>
                 </div>
-                <div class="text-muted mt-1" id="trading-meta" style="font-size:0.78rem">&mdash;</div>
-                <div class="mt-1" id="trading-reason" style="font-size:0.78rem;display:none"></div>
+                <!-- Both gates, always shown: which one is off is the thing
+                     that tells you whether an .env edit or a click is needed. -->
+                <div class="mt-2" id="trading-gates" style="font-size:0.78rem"></div>
+                <!-- The live service's own "why", verbatim. -->
+                <div class="text-muted mt-2" id="trading-why"
+                     style="font-size:0.78rem;line-height:1.45;max-width:46rem"></div>
+                <div class="text-muted mt-1" id="trading-changed" style="font-size:0.72rem"></div>
             </div>
             <div class="d-flex gap-2">
                 <button id="btn-arm" class="btn btn-sm btn-danger" disabled
-                        onclick="setArmed(true, this)">
+                        onclick="setTrading(true, this)">
                     <i class="bi bi-unlock"></i> Arm
                 </button>
                 <button id="btn-disarm" class="btn btn-sm btn-outline-secondary" disabled
-                        onclick="setArmed(false, this)">
+                        onclick="setTrading(false, this)">
                     <i class="bi bi-shield-lock"></i> Disarm
                 </button>
             </div>
@@ -143,45 +148,81 @@ loadServiceStatus();
 setInterval(loadServiceStatus, 30000);
 
 // ── Live trading arm/disarm ────────────────────────────────────────────────
-// Colour follows risk, not service health: green = disarmed (safe),
-// red = armed (real orders possible).
+//
+// Three separate gates, and which one is off decides what the operator has to
+// do next:
+//   env_enabled=false      the outer gate. Needs an .env edit and a restart
+//                          of spx-live -- no button here can move it.
+//   env_enabled=true,
+//   runtime_enabled=false  armable from this page.
+//   runtime_enabled=true   live. Orders can leave.
+// Colour follows risk, not service health: red = live.
+
+function gatePill(on, label) {
+    const cls = on === true ? 's-active' : on === false ? 's-inactive' : 's-unknown';
+    const mark = on === true ? 'on' : on === false ? 'off' : '?';
+    return `<span class="status-badge ${cls}" style="font-size:0.7rem">`
+         + `<span class="dot"></span>${label}: ${mark}</span>`;
+}
+
+let lastTrading = null;   // last state seen, so Arm knows whether to prompt
+
 function renderTrading(t) {
-    const badge  = document.getElementById('trading-badge');
-    const meta   = document.getElementById('trading-meta');
-    const reason = document.getElementById('trading-reason');
-    const armBtn = document.getElementById('btn-arm');
-    const disBtn = document.getElementById('btn-disarm');
+    lastTrading = t;
+    const badge   = document.getElementById('trading-badge');
+    const gates   = document.getElementById('trading-gates');
+    const why     = document.getElementById('trading-why');
+    const changed = document.getElementById('trading-changed');
+    const armBtn  = document.getElementById('btn-arm');
+    const disBtn  = document.getElementById('btn-disarm');
 
     if (!t || t.available === false) {
         badge.className = 'status-badge s-unknown';
         badge.innerHTML = '<span class="dot"></span>unavailable';
-        meta.textContent = t && t.reason ? t.reason : 'live service not reachable';
-        reason.style.display = 'none';
+        gates.innerHTML = '';
+        why.textContent = t && t.why ? t.why : 'live service not reachable';
+        changed.textContent = '';
         armBtn.disabled = true;
         disBtn.disabled = true;
         return;
     }
 
-    const armed = t.armed === true;
-    badge.className = 'status-badge ' + (armed ? 's-failed' : 's-active');
-    badge.innerHTML = `<span class="dot"></span>${armed ? 'ARMED' : 'DISARMED'}`;
-    meta.textContent = armed
-        ? 'Live orders can be placed.'
-        : 'Live orders are blocked.';
-    meta.textContent += t.enabled === false ? '  Environment gate: off.' : '';
+    const live = t.runtime_enabled === true;
+    badge.className = 'status-badge ' + (live ? 's-failed' : 's-active');
+    badge.innerHTML = `<span class="dot"></span>${live ? 'LIVE — ORDERS CAN LEAVE' : 'DISARMED'}`;
 
-    // Surface the service's own explanation whenever arming is not available.
-    if (t.reason && (!t.can_arm || armed === false)) {
-        reason.textContent = t.reason;
-        reason.className = t.can_arm ? 'text-muted' : 'text-danger';
-        reason.style.display = 'block';
-    } else {
-        reason.style.display = 'none';
+    gates.innerHTML = [
+        gatePill(t.env_enabled, 'env gate'),
+        gatePill(t.runtime_enabled, 'runtime flag'),
+        gatePill(t.control_token_set, 'control token'),
+    ].join(' ');
+
+    // The service's own explanation, verbatim -- it already says what to do.
+    let text = t.why || '';
+    // can_enable tracks the environment gate only, so it can be true while
+    // arming is still impossible for want of a token. Say so explicitly.
+    if (t.can_enable === true && t.control_token_set === false) {
+        text += (text ? '\n\n' : '')
+             + 'LIVE_CONTROL_TOKEN is not set on the live service, so arming over '
+             + 'HTTP is refused outright. Set it in the spx-live environment and '
+             + 'restart the unit. Disarming never needs it.';
     }
+    why.textContent = text;
+    why.className = t.can_arm === false && !live ? 'text-danger mt-2' : 'text-muted mt-2';
 
-    armBtn.disabled = armed || t.can_arm === false;
-    // Disarm stays clickable whenever the service answers, so it is always
-    // possible to slam trading off without first reasoning about state.
+    const bits = [];
+    if (t.changed_at) {
+        bits.push(`last change: ${t.changed_at}` + (t.changed_by ? ` by ${t.changed_by}` : ''));
+    }
+    bits.push(t.token_available === true
+        ? 'control token: configured on this dashboard, sent automatically'
+        : 'control token: entered per arm, not stored here');
+    changed.textContent = bits.join('  ·  ');
+
+    armBtn.disabled = live || t.can_arm === false;
+    // Disarm stays clickable whenever the service answers: the live service
+    // never refuses a disable, and a kill switch that reasons about state
+    // first is a kill switch that hesitates.
     disBtn.disabled = false;
 }
 
@@ -190,19 +231,28 @@ async function loadTrading() {
         const res = await fetch('/api/trading');
         renderTrading(await res.json());
     } catch (err) {
-        renderTrading({available: false, reason: 'Request failed: ' + err.message});
+        renderTrading({available: false, why: 'Request failed: ' + err.message});
     }
 }
 
-async function setArmed(armed, btn) {
-    if (armed && !confirm(
-        'Arm live trading?\n\n' +
-        'The live service will be able to place real orders until you disarm it.'
-    )) return;
+async function setTrading(enabled, btn) {
+    let token = null;
+    if (enabled) {
+        if (!confirm('Arm live trading?\n\n'
+                   + 'The live service will be able to place real orders until it is '
+                   + 'disarmed or restarted.')) return;
+        // If the server has been configured with a token it sends that one and
+        // never reveals it here; otherwise it is typed once and forwarded, so
+        // reaching this page is not by itself enough to arm.
+        if (!lastTrading || lastTrading.token_available !== true) {
+            token = prompt('LIVE_CONTROL_TOKEN (required to arm; not stored by this dashboard):');
+            if (token === null) return;
+        }
+    }
 
     const out   = document.getElementById('output');
     const label = document.getElementById('action-label');
-    label.textContent = 'Last action: ' + (armed ? 'Arm' : 'Disarm') + ' live trading';
+    label.textContent = 'Last action: ' + (enabled ? 'Arm' : 'Disarm') + ' live trading';
     label.style.display = 'block';
 
     const orig = btn.innerHTML;
@@ -212,7 +262,7 @@ async function setArmed(armed, btn) {
         const res = await fetch('/api/trading', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({armed: armed}),
+            body: JSON.stringify(enabled ? {enabled: true, token: token} : {enabled: false}),
         });
         const data = await res.json();
         showOutput(out, data.output || data.detail, data.success !== false);
@@ -220,6 +270,7 @@ async function setArmed(armed, btn) {
     } catch (err) {
         showOutput(out, 'Request failed: ' + err.message, false);
     } finally {
+        token = null;
         btn.innerHTML = orig;
         loadTrading();   // re-read authoritative state
     }

@@ -93,15 +93,37 @@ PROJECTS = {
     },
 }
 
-# Live-trading arm/disarm control, served by the spx-live unit. The endpoint
-# is localhost-only and unauthenticated by design: the safety property is that
-# arming can only be done from the VPS itself, so the public trading page
-# cannot place orders on its own. This dashboard proxies it -- see /api/trading.
+# Live-trading arm/disarm control, served by the spx-live unit.
+#
+# NOT localhost-protected. live/config.py in spx_analysis_dashboard is explicit
+# that the service is reachable from the internet through the cloudflared
+# tunnel, and that behind the tunnel every request appears to come from
+# localhost -- so filtering by address proves nothing there. What actually
+# guards arming is LIVE_CONTROL_TOKEN, a shared secret required to enable and
+# deliberately NOT required to disable (a kill switch that needs credentials
+# fails closed at the worst moment).
+#
+# This dashboard therefore does not hold the token: it is entered per arm in
+# the browser and forwarded as X-Live-Token, so read access to this dashboard
+# is not by itself enough to arm live trading.
 TRADING_CONTROL = {
     "name": "SPX Live Trading",
     "base_url": "http://127.0.0.1:8001",
-    "path": "/trading",
+    "path": "/broker/trading",
     "timeout": 5,
+    # Recorded by the live service as "who armed this".
+    "who": "vps-dashboard",
+    # Optional: if this environment variable is set for THIS dashboard, the
+    # token is sent automatically and the browser stops asking for it. The
+    # value is only ever read from the environment -- it must never be written
+    # into this repo, which is pushed to GitHub. Set it in /root/VPS_Dashboard/.env
+    # (gitignored) or as Environment= in vps_dashboard.service.
+    #
+    # Leaving it unset is the safer configuration: this dashboard binds
+    # 0.0.0.0:8080 with no authentication, so a stored token means anyone who
+    # reaches port 8080 can arm live trading, while an unstored one means they
+    # must also know the secret. Set it only if 8080 is properly restricted.
+    "token_env": "LIVE_CONTROL_TOKEN",
 }
 
 # Log files shown on the Logs page.

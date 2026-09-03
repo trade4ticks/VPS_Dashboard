@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import duckdb
 import psycopg2
@@ -399,92 +400,154 @@ def api_deploy(project_key: str):
 # ---------------------------------------------------------------------------
 # API — live trading arm/disarm (proxied to the spx-live service)
 # ---------------------------------------------------------------------------
+#
+# The live service's contract (spx_analysis_dashboard live/main.py, broker.py):
+#
+#   GET  /broker/trading  -> the state object, flat.
+#   POST /broker/trading  {"enabled": bool, "who": str} + X-Live-Token header
+#                         -> {"ok": bool, "why": str, "trading": {state}}
+#
+# Three things about it drive the code below:
+#
+#   * A REFUSAL IS HTTP 200 with ok=false, not a 4xx. Status codes say nothing
+#     about whether the flip happened; only the "ok" field does.
+#   * The state is NESTED under "trading" on POST and flat on GET.
+#   * env_enabled, runtime_enabled and can_enable are three separate things.
+#     can_enable mirrors the environment gate ONLY -- it can be true while
+#     arming still fails because LIVE_CONTROL_TOKEN is unset, so the token is
+#     checked separately before offering the button.
 
-def _trading_call(method: str, payload: dict = None) -> dict:
-    """Call the live service's /trading endpoint and normalise the outcome.
+def _trading_call(method: str, payload: dict = None, token: str = None) -> dict:
+    """Call the live service's /broker/trading endpoint.
 
-    That endpoint binds localhost only and takes no credentials -- the safety
-    property is positional, not authenticated: reaching it requires already
-    being on the VPS. This dashboard is the intended caller. Failures here are
-    connection- or gate-level (409 when the environment gate is off), never
-    auth, so the service's own "reason" is what the operator needs to see.
+    Returns transport-level outcome only: ok=True means we got a response and
+    parsed it, NOT that the service agreed to do anything.
     """
     cfg = config.TRADING_CONTROL
-    url = cfg["base_url"].rstrip("/") + cfg.get("path", "/trading")
+    url = cfg["base_url"].rstrip("/") + cfg.get("path", "/broker/trading")
     data = json.dumps(payload).encode() if payload is not None else None
-    headers = {"Content-Type": "application/json"} if data else {}
+    headers = {}
+    if data:
+        headers["Content-Type"] = "application/json"
+    if token:
+        # The header is the right place for it service-to-service; it is never
+        # logged or echoed back to the browser.
+        headers["X-Live-Token"] = token
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=cfg.get("timeout", 5)) as resp:
-            raw = resp.read() or b"{}"
-            return {"ok": True, "status": resp.status, "body": json.loads(raw)}
+            return {"ok": True, "status": resp.status, "body": json.loads(resp.read() or b"{}")}
     except urllib.error.HTTPError as exc:
         raw = exc.read() or b""
         try:
             body = json.loads(raw)
         except ValueError:
-            body = {"reason": raw.decode(errors="replace").strip()}
-        return {"ok": False, "status": exc.code, "body": body}
+            body = {"why": raw.decode(errors="replace").strip()}
+        return {"ok": False, "status": exc.code,
+                "body": body if body else {"why": f"HTTP {exc.code}"}}
     except urllib.error.URLError as exc:
         return {"ok": False, "status": None,
-                "body": {"reason": f"live service unreachable: {exc.reason}"}}
+                "body": {"why": f"live service unreachable: {exc.reason}"}}
     except (ValueError, OSError) as exc:
         return {"ok": False, "status": None,
-                "body": {"reason": f"bad response from live service: {exc}"}}
+                "body": {"why": f"bad response from live service: {exc}"}}
 
 
-def _trading_state(body: dict) -> dict:
+def _trading_state(st: dict) -> dict:
+    """Normalise the live service's state, adding what the UI needs to decide.
+
+    can_arm is deliberately stricter than the service's can_enable: enabling
+    also requires LIVE_CONTROL_TOKEN to be set, which can_enable does not
+    reflect, and offering a button that is certain to be refused is worse than
+    showing why it is unavailable.
+    """
+    env_on = st.get("env_enabled")
+    token_set = st.get("control_token_set")
+    changed_at = st.get("changed_at")
+    when = None
+    if isinstance(changed_at, (int, float)):
+        when = datetime.fromtimestamp(changed_at).strftime("%Y-%m-%d %H:%M:%S")
     return {
-        "enabled": body.get("enabled"),
-        "armed": body.get("armed"),
-        "can_arm": body.get("can_arm"),
-        "reason": body.get("reason"),
+        "allowed": st.get("allowed"),
+        "env_enabled": env_on,
+        "runtime_enabled": st.get("runtime_enabled"),
+        "can_enable": st.get("can_enable"),
+        "control_token_set": token_set,
+        "can_arm": bool(st.get("can_enable")) and bool(token_set),
+        "changed_at": when,
+        "changed_by": st.get("changed_by"),
+        "why": st.get("why"),
     }
+
+
+def _control_token(supplied: str = None) -> Optional[str]:
+    """The token to send when arming: whatever the operator typed, else this
+    dashboard's own environment if it has been configured with one.
+
+    The value itself is never returned to the browser or written to a log --
+    callers only ever learn whether one exists.
+    """
+    if supplied:
+        return supplied
+    name = config.TRADING_CONTROL.get("token_env")
+    return (os.environ.get(name, "").strip() or None) if name else None
 
 
 @app.get("/api/trading")
 def api_trading_get():
-    """Current arm state of the live trading service."""
+    """Current state of the live trading gates."""
     res = _trading_call("GET")
     if not res["ok"]:
-        reason = res["body"].get("reason") or f"HTTP {res['status']}"
-        return {"available": False, "reason": reason,
-                "enabled": None, "armed": None, "can_arm": False}
-    return {"available": True, **_trading_state(res["body"])}
+        return {"available": False, "why": res["body"].get("why") or f"HTTP {res['status']}",
+                "env_enabled": None, "runtime_enabled": None, "can_arm": False,
+                "token_available": False}
+    # A bool, never the secret: it only tells the UI whether to prompt.
+    return {"available": True, "token_available": bool(_control_token()),
+            **_trading_state(res["body"])}
 
 
-class TradingArmBody(BaseModel):
-    armed: bool
+class TradingSetBody(BaseModel):
+    enabled: bool
+    token: Optional[str] = None
 
 
 @app.post("/api/trading")
-def api_trading_set(body: TradingArmBody):
-    """Arm or disarm live trading. A refusal (409 when the environment gate is
-    off) is reported with the service's own reason rather than a bare failure,
-    and the state is echoed back so the UI never has to assume it succeeded."""
-    verb = "Arm" if body.armed else "Disarm"
-    res = _trading_call("POST", {"armed": body.armed})
+def api_trading_set(body: TradingSetBody):
+    """Arm or disarm live trading.
+
+    The token is forwarded, never stored. Disabling is never refused by the
+    live service and deliberately does not send one.
+    """
+    verb = "Arm" if body.enabled else "Disarm"
+    res = _trading_call(
+        "POST",
+        {"enabled": body.enabled, "who": config.TRADING_CONTROL.get("who", "vps-dashboard")},
+        # Disabling is never refused and deliberately carries no token.
+        token=_control_token(body.token) if body.enabled else None,
+    )
 
     if not res["ok"]:
-        reason = res["body"].get("reason") or f"HTTP {res['status']}"
-        state = _trading_state(res["body"])
-        # Re-read rather than trust the error body to carry full state.
-        follow = _trading_call("GET")
-        if follow["ok"]:
-            state = _trading_state(follow["body"])
-        return {
-            "success": False,
-            "output": f"{verb} refused by the live service.\n\nReason: {reason}",
-            "available": follow["ok"],
-            **state,
-        }
+        why = res["body"].get("why") or f"HTTP {res['status']}"
+        return {"success": False, "available": False,
+                "output": f"{verb} failed: could not reach the live service.\n\n{why}",
+                "can_arm": False}
 
-    state = _trading_state(res["body"])
-    armed_now = state.get("armed")
-    summary = "ARMED - live orders can be placed." if armed_now else "DISARMED - live orders are blocked."
-    detail = f"\n\nReason: {state['reason']}" if state.get("reason") else ""
-    return {"success": True, "output": f"{verb} accepted. {summary}{detail}",
-            "available": True, **state}
+    envelope = res["body"]
+    state = _trading_state(envelope.get("trading") or {})
+
+    # HTTP 200 with ok=false is the service refusing; "why" explains it.
+    if envelope.get("ok") is not True:
+        why = envelope.get("why") or "the live service refused without a reason."
+        return {"success": False, "available": True,
+                "output": f"{verb} refused by the live service.\n\n{why}", **state}
+
+    if state.get("runtime_enabled"):
+        summary = ("LIVE — the environment gate is open and the runtime flag is set, "
+                   "so orders can leave.")
+    else:
+        summary = "Disarmed — the runtime flag is off, so no order can leave."
+    return {"success": True, "available": True,
+            "output": f"{verb} accepted.\n\n{summary}", **state}
 
 
 @app.post("/api/force-run/{log_key}")
