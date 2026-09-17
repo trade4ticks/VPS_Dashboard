@@ -299,6 +299,31 @@ LOG_FILES = {
             "warn_regex": r"^\s*FAILED\s+[1-9]",
         },
     },
+    "nightly_paths": {
+        "name": "Trade Paths (cron)",
+        "path": "/Open_Interest/logs/nightly_paths.log",
+        "schedule": "45 20 * * 1-5",
+        "description": "1-min bars, rolling trade_paths, split repair stage 4, 8:45pm ET, weekdays",
+        # A run ends with "2026-09-16 20:52:10  INFO  Nightly paths complete
+        # (fetch = 0, paths = 0, split_paths = 0)". Only the runner logs a full
+        # date; the child fetch/build scripts log bare HH:MM:SS, so ts_regex
+        # skips their lines. A nonzero fetch still builds paths, so it is a
+        # warning; a nonzero paths or split_paths is a failed run, as are the
+        # runner's early exits. ts_carry dates an untimestamped runner
+        # Traceback by the runner's last line -- a child's Traceback always
+        # precedes the (newer) completion line, so it cannot mark a run red.
+        "status": {
+            "lines": 300,
+            "label": "Trade Paths",
+            "ts_regex": r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
+            "ts_format": "%Y-%m-%d %H:%M:%S",
+            "ts_carry": True,
+            "display_format": "%Y-%m-%d %H:%M",
+            "success_regex": r"Nightly paths complete \(fetch = \d+, paths = 0, split_paths = 0\)",
+            "failure_regex": r"Nightly paths complete \(.*paths = [1-9]|still held after|universe is empty|Traceback",
+            "warn_regex": r"Nightly paths complete \(fetch = [1-9]\d*,",
+        },
+    },
     "ai_explorer": {
         "name": "AI Explorer Log",
         "type": "postgres",
@@ -318,7 +343,7 @@ CRON_OVERVIEW_CARDS = [
     {"members": ["spx_pipeline"]},
     {
         "name": "Equity Analysis",
-        "members": ["oi_pipeline", "equity_iv_intraday", "earnings"],
+        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths"],
     },
     {"members": ["pg_backup"]},
 ]
