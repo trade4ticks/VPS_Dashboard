@@ -324,6 +324,55 @@ LOG_FILES = {
             "warn_regex": r"Nightly paths complete \(fetch = [1-9]\d*,",
         },
     },
+    "equity_retention": {
+        "name": "Equity_Retention (cron) (5min)",
+        "path": "/Open_Interest/logs/equity_retention.log",
+        "schedule": "30 3 * * 2-6",
+        "description": "Delete 5min equity surface & diagnostics in postgres to retain only 30-60 days",
+        # A run opens with "=== equity_surface retention — 2026-10-27 03:30 ET
+        # (DELETE) ===" and, if it gets through every step, ends with
+        # "surface freed : 0.35 GB". No other line is timestamped, so ts_carry
+        # dates the run's markers by its header. A diagnostics failure or an
+        # uncaught Traceback exits before the "surface freed" line, so it is a
+        # failed run. A partition that fails is left as it was and the run
+        # carries on to "surface freed", so it is a warning instead.
+        "status": {
+            "lines": 200,
+            "label": "Equity Retention",
+            "ts_regex": r"equity_surface retention \S (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) ET",
+            "ts_format": "%Y-%m-%d %H:%M",
+            "ts_carry": True,
+            "display_format": "%Y-%m-%d %H:%M",
+            "success_regex": r"^surface freed :",
+            "failure_regex": r"FAILED after|Traceback",
+            "warn_regex": r"FAILED, left as it was",
+        },
+    },
+    "chain_live_retention": {
+        "name": "Chain_Live Retention (cron) (5min)",
+        "path": "/Open_Interest/logs/chain_live_retention.log",
+        "schedule": "40 3 * * 2-6",
+        "description": "Delete 5min equity parquet to retain only 30-60 days",
+        # Same shape as equity_retention: a run opens with "=== chain_live
+        # retention — 2026-10-27 03:40 ET (DELETE) ===" and a pruning run ends
+        # with "deleted        : 12,345 file(s), 40.00 GB in 12s". "REFUSING"
+        # (a folder past the cutoff holds neither anchor) exits before any
+        # delete, so it is a failed run. Files that fail to unlink are counted
+        # on a "failed         : N file(s)" line after "deleted", so that run
+        # is a warning. The per-file "FAILED <path>" lines can run long, hence
+        # the deeper tail.
+        "status": {
+            "lines": 400,
+            "label": "Chain_Live Retention",
+            "ts_regex": r"chain_live retention \S (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) ET",
+            "ts_format": "%Y-%m-%d %H:%M",
+            "ts_carry": True,
+            "display_format": "%Y-%m-%d %H:%M",
+            "success_regex": r"^deleted\s+: ",
+            "failure_regex": r"REFUSING|Traceback",
+            "warn_regex": r"^failed\s+: [1-9]",
+        },
+    },
     "ai_explorer": {
         "name": "AI Explorer Log",
         "type": "postgres",
@@ -343,7 +392,7 @@ CRON_OVERVIEW_CARDS = [
     {"members": ["spx_pipeline"]},
     {
         "name": "Equity Analysis",
-        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths"],
+        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths", "equity_retention", "chain_live_retention"],
     },
     {"members": ["pg_backup"]},
 ]
