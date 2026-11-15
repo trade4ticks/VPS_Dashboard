@@ -373,6 +373,32 @@ LOG_FILES = {
             "warn_regex": r"^failed\s+: [1-9]",
         },
     },
+    "spx_oi_volume": {
+        "name": "SPX_OI_Volume (cron)",
+        "path": "/Open_Interest/logs/spx_options.log",
+        "schedule": "30 5 * * 2-6",
+        "description": "SPXW raw OI + EOD volume — trailing 7 calendar days ending yesterday, 5:30am ET, Tue–Sat",
+        # Written by Open_Interest/fetch_spx_options.py. A run opens with
+        # "=== SPX / SPXW fetch  2026-11-14 05:30:01 ET  [... → ...] ===" and
+        # ends with "All requested days present." (exit 0) or "Some requested
+        # days have no rows." (exit 1). An unreachable ThetaData terminal
+        # prints "FAILED — terminal not reachable."; the SystemExit guards
+        # ("refusing to fetch", "PRODUCTION OI tree", "no parquet under") and
+        # Tracebacks are failed runs too. Only the header is timestamped, so
+        # ts_carry dates the rest of the run by it. A per-day "FAIL" fetch line
+        # in a run that still ends with every day present is a warning.
+        "status": {
+            "lines": 200,
+            "label": "SPX OI + Volume",
+            "ts_regex": r"SPX / SPXW fetch\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ET",
+            "ts_format": "%Y-%m-%d %H:%M:%S",
+            "ts_carry": True,
+            "display_format": "%Y-%m-%d %H:%M",
+            "success_regex": r"All requested days present",
+            "failure_regex": r"Some requested days have no rows|terminal not reachable|refusing to fetch|PRODUCTION OI tree|no parquet under|is inside OI_RAW_DIR|Traceback",
+            "warn_regex": r"\bFAIL\s",
+        },
+    },
     "ai_explorer": {
         "name": "AI Explorer Log",
         "type": "postgres",
@@ -392,7 +418,7 @@ CRON_OVERVIEW_CARDS = [
     {"members": ["spx_pipeline"]},
     {
         "name": "Equity Analysis",
-        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths", "equity_retention", "chain_live_retention"],
+        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths", "equity_retention", "chain_live_retention", "spx_oi_volume"],
     },
     {"members": ["pg_backup"]},
 ]
