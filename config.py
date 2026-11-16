@@ -373,30 +373,28 @@ LOG_FILES = {
             "warn_regex": r"^failed\s+: [1-9]",
         },
     },
-    "spx_oi_volume": {
-        "name": "SPX_OI_Volume (cron)",
-        "path": "/Open_Interest/logs/spx_options.log",
-        "schedule": "30 5 * * 2-6",
-        "description": "SPXW raw OI + EOD volume — trailing 7 calendar days ending yesterday, 5:30am ET, Tue–Sat",
-        # Written by Open_Interest/fetch_spx_options.py. A run opens with
-        # "=== SPX / SPXW fetch  2026-11-14 05:30:01 ET  [... → ...] ===" and
-        # ends with "All requested days present." (exit 0) or "Some requested
-        # days have no rows." (exit 1). An unreachable ThetaData terminal
-        # prints "FAILED — terminal not reachable."; the SystemExit guards
-        # ("refusing to fetch", "PRODUCTION OI tree", "no parquet under") and
-        # Tracebacks are failed runs too. Only the header is timestamped, so
-        # ts_carry dates the rest of the run by it. A per-day "FAIL" fetch line
-        # in a run that still ends with every day present is a warning.
+    "spx_daily": {
+        "name": "SPX_OI_Vol_Price_Metrics",
+        "path": "/Open_Interest/logs/spx_daily.log",
+        "schedule": "30 7 * * 1-5",
+        "description": "SPX DAILY — history fetch, OI, Volume, Price then all four builds",
+        # Written by Open_Interest/run_spx_pipeline.py (fetch, freshness-gated
+        # snapshot, then four builds). A failed stage does not stop the run;
+        # every run ends with a timestamped summary line like
+        # "2026-11-17 08:41:02  INFO      total 4210.3s; 0 of 6 stage(s) failed".
+        # 0 failed is a success; any other count is a failed run (the script
+        # exits 1). Stage children print untimestamped lines, so ts_carry dates
+        # an uncaught runner Traceback by the last timestamped line -- a child's
+        # Traceback always precedes the (newer) summary, so the summary decides.
         "status": {
-            "lines": 200,
-            "label": "SPX OI + Volume",
-            "ts_regex": r"SPX / SPXW fetch\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ET",
+            "lines": 400,
+            "label": "SPX Daily",
+            "ts_regex": r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
             "ts_format": "%Y-%m-%d %H:%M:%S",
             "ts_carry": True,
             "display_format": "%Y-%m-%d %H:%M",
-            "success_regex": r"All requested days present",
-            "failure_regex": r"Some requested days have no rows|terminal not reachable|refusing to fetch|PRODUCTION OI tree|no parquet under|is inside OI_RAW_DIR|Traceback",
-            "warn_regex": r"\bFAIL\s",
+            "success_regex": r"total [\d.]+s; 0 of \d+ stage\(s\) failed",
+            "failure_regex": r"total [\d.]+s; [1-9]\d* of \d+ stage\(s\) failed|Traceback",
         },
     },
     "ai_explorer": {
@@ -418,7 +416,7 @@ CRON_OVERVIEW_CARDS = [
     {"members": ["spx_pipeline"]},
     {
         "name": "Equity Analysis",
-        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths", "equity_retention", "chain_live_retention", "spx_oi_volume"],
+        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths", "equity_retention", "chain_live_retention", "spx_daily"],
     },
     {"members": ["pg_backup"]},
 ]
