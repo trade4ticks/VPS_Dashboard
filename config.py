@@ -374,7 +374,7 @@ LOG_FILES = {
         },
     },
     "spx_daily": {
-        "name": "SPX_OI_Vol_Price_Metrics",
+        "name": "SPX_OI_Vol_Price_Metrics_Daily (cron)",
         "path": "/Open_Interest/logs/spx_daily.log",
         "schedule": "30 7 * * 1-5",
         "description": "SPX DAILY — history fetch, OI, Volume, Price then all four builds",
@@ -388,13 +388,42 @@ LOG_FILES = {
         # Traceback always precedes the (newer) summary, so the summary decides.
         "status": {
             "lines": 400,
-            "label": "SPX Daily",
+            "label": "SPX_OI_Vol_Price_Metrics_Daily",
             "ts_regex": r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
             "ts_format": "%Y-%m-%d %H:%M:%S",
             "ts_carry": True,
             "display_format": "%Y-%m-%d %H:%M",
             "success_regex": r"total [\d.]+s; 0 of \d+ stage\(s\) failed",
             "failure_regex": r"total [\d.]+s; [1-9]\d* of \d+ stage\(s\) failed|Traceback",
+        },
+    },
+    "spx_intraday": {
+        "name": "SPX_OI_Vol_Price_Metrics_Intraday (cron)",
+        "path": "/Open_Interest/logs/spx_intraday.log",
+        "schedule": "3-58/5 9-16 * * 1-5",
+        "description": "SPX intraday — OI, Volume, Price",
+        # Written by Open_Interest/run_spx_intraday.py. A working cycle ends
+        # with one timestamped line, INFO on success and ERROR if a build
+        # stage failed:
+        # "2026-11-17 10:13:25  INFO      intraday 10:13: price_5min ok 9.8s
+        # (78 rows), oi_5min ok 11.2s (78 rows) | ... | total 21.3s".
+        # A failed stage also logs "ERROR  intraday 10:13: oi_5min FAILED ..."
+        # followed by its untimestamped output, so ts_carry dates any
+        # Traceback in that output by the cycle. Cycles outside the session
+        # log "intraday 2026-11-17 16:03 no-op: ..." and match nothing, so the
+        # card keeps the last real cycle after the close and over weekends.
+        # DEGRADED (today's OI missing, oi_5min skipped, price_5min still
+        # built) is marked on the INFO summary line, so it is a warning.
+        "status": {
+            "lines": 300,
+            "label": "SPX_OI_Vol_Price_Metrics_Intraday",
+            "ts_regex": r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
+            "ts_format": "%Y-%m-%d %H:%M:%S",
+            "ts_carry": True,
+            "display_format": "%Y-%m-%d %H:%M",
+            "success_regex": r"INFO\s+intraday \d{2}:\d{2}: .*\| total [\d.]+s",
+            "failure_regex": r"ERROR\s+intraday \d{2}:\d{2}: |Traceback",
+            "warn_regex": r"oi_5min SKIPPED \(degraded\)",
         },
     },
     "ai_explorer": {
@@ -416,7 +445,7 @@ CRON_OVERVIEW_CARDS = [
     {"members": ["spx_pipeline"]},
     {
         "name": "Equity Analysis",
-        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths", "equity_retention", "chain_live_retention", "spx_daily"],
+        "members": ["oi_pipeline", "equity_iv_intraday", "earnings", "nightly_paths", "equity_retention", "chain_live_retention", "spx_daily", "spx_intraday"],
     },
     {"members": ["pg_backup"]},
 ]
